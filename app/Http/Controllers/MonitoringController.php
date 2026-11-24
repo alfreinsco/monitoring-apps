@@ -9,6 +9,7 @@ use App\Services\TargetMonitorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -310,7 +311,13 @@ class MonitoringController extends Controller
 
     public function destroy(MonitoredTarget $target): RedirectResponse
     {
-        $target->delete();
+        DB::transaction(function () use ($target): void {
+            MonitoringHistory::withoutTimestamps(function () use ($target): void {
+                $target->histories()->update(['monitored_target_id' => null]);
+            });
+
+            $target->delete();
+        });
 
         return to_route('targets.index');
     }
