@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\MonitoredTarget;
+use App\Models\MonitoringHistory;
+use App\Models\Pengaturan;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -25,6 +27,49 @@ class TargetMonitorService
         }
 
         return $targets->count();
+    }
+
+    /** Simpan snapshot target sesuai status dan interval yang dikonfigurasi. */
+    public function recordDueHistories(): int
+    {
+        $settings = Pengaturan::query()->find('riwayat')?->value ?? [];
+        $statuses = $settings['statuses'] ?? ['healthy', 'degraded', 'critical'];
+        $intervalSeconds = max(1, ((float) ($settings['interval_minutes'] ?? 1)) * 60);
+        $latestChecks = MonitoringHistory::query()
+            ->selectRaw('monitored_target_id, MAX(checked_at) as last_checked_at')
+            ->groupBy('monitored_target_id')
+            ->pluck('last_checked_at', 'monitored_target_id');
+        $now = now();
+        $recorded = 0;
+
+        foreach (MonitoredTarget::query()->get() as $target) {
+            if (! in_array($target->status, $statuses, true)) {
+                continue;
+            }
+
+            $lastCheckedAt = $latestChecks->get($target->id);
+            if ($lastCheckedAt !== null && Carbon::parse($lastCheckedAt)->diffInSeconds($now) + 0.001 < $intervalSeconds) {
+                continue;
+            }
+
+            $target->histories()->create([
+                'host' => $target->host,
+                'status' => $target->status,
+                'uptime' => $target->uptime,
+                'latency_ms' => $target->latency_ms,
+                'p95_ms' => $target->p95_ms,
+                'http_status' => $target->http_status,
+                'ssl_days_remaining' => $target->ssl_days_remaining,
+                'tls_version' => $target->tls_version,
+                'threat_score' => $target->threat_score,
+                'findings' => $target->recent_findings ?? [],
+                'checked_at' => $now,
+            ]);
+            $latestChecks->put($target->id, $now->toDateTimeString());
+            $recorded++;
+        }
+
+        return $recorded;
     }
 
     public function checkTarget(MonitoredTarget $target): MonitoredTarget
@@ -62,19 +107,6 @@ class TargetMonitorService
                 'recent_findings' => $result['recent_findings'],
             ]);
 
-            $target->histories()->create([
-                'host' => $target->host,
-                'status' => $result['status'],
-                'uptime' => $uptime,
-                'latency_ms' => $result['latency_ms'],
-                'p95_ms' => $p95Ms,
-                'http_status' => $result['http_status'],
-                'ssl_days_remaining' => $result['ssl_days_remaining'],
-                'tls_version' => $result['tls_version'],
-                'threat_score' => $result['threat_score'],
-                'findings' => $result['recent_findings'],
-                'checked_at' => $checkedAt,
-            ]);
         });
 
         $updatedTarget = $target->fresh() ?? $target;

@@ -1,6 +1,6 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import { useEffect, useId, useRef, useState } from 'react';
-import { testGoogleChat, testTelegram, updateGoogleChat, updateTelegram } from '@/actions/App/Http/Controllers/PengaturanController';
+import { testGoogleChat, testTelegram, updateGoogleChat, updateHistory, updateTelegram } from '@/actions/App/Http/Controllers/PengaturanController';
 import AppNavbar from '@/components/app-navbar';
 
 type Status = 'healthy' | 'degraded' | 'critical';
@@ -30,6 +30,7 @@ interface GoogleChatClient {
 
 interface SettingsProps {
     targets: TargetOption[];
+    historySettings: { statuses: Status[]; intervalMinutes: number };
     telegram: {
         enabled: boolean;
         tokenConfigured: boolean;
@@ -205,11 +206,20 @@ function ErrorText({ children }: { children?: string }) {
     return children ? <p className="mt-1 text-xs text-rose-300">{children}</p> : null;
 }
 
-export default function Pengaturan({ targets, telegram, googleChat, connectionTest }: SettingsProps) {
+export default function Pengaturan({ targets, historySettings, telegram, googleChat, connectionTest }: SettingsProps) {
     const [testingClient, setTestingClient] = useState<string | null>(null);
     const [testErrors, setTestErrors] = useState<Record<string, string>>({});
     const skipTelegramAutoSave = useRef(true);
     const skipGoogleChatAutoSave = useRef(true);
+    const skipHistoryAutoSave = useRef(true);
+    const historySaveTimeout = useRef<number | null>(null);
+    const [historyIntervalUnit, setHistoryIntervalUnit] = useState<'seconds' | 'minutes' | 'hours'>(
+        historySettings.intervalMinutes < 1 ? 'seconds' : historySettings.intervalMinutes >= 60 && historySettings.intervalMinutes % 60 === 0 ? 'hours' : 'minutes',
+    );
+    const historyForm = useForm({
+        statuses: historySettings.statuses,
+        interval_minutes: historySettings.intervalMinutes,
+    });
     const telegramForm = useForm({
         enabled: telegram.enabled,
         bot_token: '',
@@ -278,6 +288,53 @@ export default function Pengaturan({ targets, telegram, googleChat, connectionTe
         return () => window.clearTimeout(timeout);
     }, [chatForm.data]);
 
+    useEffect(() => {
+        if (skipHistoryAutoSave.current) {
+            skipHistoryAutoSave.current = false;
+
+            return;
+        }
+
+        const timeout = window.setTimeout(saveHistorySettings, 3000);
+        historySaveTimeout.current = timeout;
+
+        return () => {
+            window.clearTimeout(timeout);
+            if (historySaveTimeout.current === timeout) {
+                historySaveTimeout.current = null;
+            }
+        };
+    }, [historyForm.data]);
+
+    function saveHistorySettings(): void {
+        if (historySaveTimeout.current !== null) {
+            window.clearTimeout(historySaveTimeout.current);
+            historySaveTimeout.current = null;
+        }
+
+        historyForm.put(updateHistory.url(), { preserveScroll: true });
+    }
+
+    const displayedHistoryInterval = historyIntervalUnit === 'seconds'
+        ? historyForm.data.interval_minutes * 60
+        : historyIntervalUnit === 'hours'
+            ? historyForm.data.interval_minutes / 60
+            : historyForm.data.interval_minutes;
+
+    function updateHistoryInterval(value: string): void {
+        const amount = Number(value);
+        if (!Number.isFinite(amount) || amount < (historyIntervalUnit === 'seconds' ? 1 : historyIntervalUnit === 'minutes' ? 1 / 60 : 1 / 3600)) {
+            return;
+        }
+
+        const intervalMinutes = historyIntervalUnit === 'seconds'
+            ? amount / 60
+            : historyIntervalUnit === 'hours'
+                ? amount * 60
+                : amount;
+        historyForm.setData('interval_minutes', Number(intervalMinutes.toFixed(8)));
+    }
+
     function addTelegramClient(): void {
         telegramForm.setData('clients', [...telegramForm.data.clients, {
             id: newClientId(), chat_id: '', target_ids: [], target_all: true, statuses: ['critical', 'degraded'],
@@ -342,6 +399,40 @@ export default function Pengaturan({ targets, telegram, googleChat, connectionTe
                 </header>
 
                 <main className="mx-auto max-w-4xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
+                    <section className="cyber-panel rounded-2xl p-5 sm:p-6" onBlur={saveHistorySettings}>
+                        <div className="mb-5">
+                            <h2 className="text-base font-bold text-white">Pengaturan Riwayat</h2>
+                            <p className="mt-1 text-xs text-slate-400">Atur status target dan interval penyimpanan snapshot ke riwayat.</p>
+                        </div>
+                        <div className="space-y-5">
+                            <StatusFields
+                                statuses={historyForm.data.statuses}
+                                onChange={(statuses) => historyForm.setData('statuses', statuses)}
+                            />
+                            <div className="max-w-md">
+                                <label htmlFor="history-interval" className="mb-1.5 block text-xs font-semibold text-slate-200">Simpan setiap</label>
+                                <div className="grid grid-cols-[1fr_140px] gap-2">
+                                    <input
+                                        id="history-interval"
+                                        type="number"
+                                        min={historyIntervalUnit === 'seconds' ? '1' : historyIntervalUnit === 'minutes' ? '0.01666667' : '0.00027778'}
+                                        step="any"
+                                        value={Number(displayedHistoryInterval.toFixed(4))}
+                                        onChange={(event) => updateHistoryInterval(event.target.value)}
+                                        className={inputClass}
+                                    />
+                                    <select value={historyIntervalUnit} onChange={(event) => setHistoryIntervalUnit(event.target.value as typeof historyIntervalUnit)} className={inputClass}>
+                                        <option value="seconds">Detik</option>
+                                        <option value="minutes">Menit</option>
+                                        <option value="hours">Jam</option>
+                                    </select>
+                                </div>
+                                <ErrorText>{historyForm.errors.interval_minutes}</ErrorText>
+                                <p aria-live="polite" className="mt-2 text-xs text-slate-400">{historyForm.processing ? 'Menyimpan perubahan…' : 'Interval disimpan dalam menit dan diperbarui otomatis.'}</p>
+                            </div>
+                        </div>
+                    </section>
+
                     <section className="cyber-panel rounded-2xl p-5 sm:p-6">
                         <div className="mb-5 flex items-start justify-between gap-4">
                             <div>

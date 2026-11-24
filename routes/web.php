@@ -10,6 +10,7 @@ Route::get('/riwayat', [MonitoringController::class, 'riwayat'])->name('riwayat.
 Route::get('/pengaturan', [PengaturanController::class, 'index'])->name('pengaturan.index');
 Route::put('/pengaturan/telegram', [PengaturanController::class, 'updateTelegram'])->name('pengaturan.telegram.update');
 Route::put('/pengaturan/google-chat', [PengaturanController::class, 'updateGoogleChat'])->name('pengaturan.google-chat.update');
+Route::put('/pengaturan/riwayat', [PengaturanController::class, 'updateHistory'])->name('pengaturan.riwayat.update');
 Route::post('/pengaturan/telegram/test', [PengaturanController::class, 'testTelegram'])->name('pengaturan.telegram.test');
 Route::post('/pengaturan/google-chat/test', [PengaturanController::class, 'testGoogleChat'])->name('pengaturan.google-chat.test');
 Route::post('/targets', [MonitoringController::class, 'store'])->name('targets.store');

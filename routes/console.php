@@ -15,4 +15,11 @@ Artisan::command('monitoring:check', function (TargetMonitorService $monitor): v
     $this->info("Pemeriksaan nyata selesai untuk {$count} target.");
 })->purpose('Jalankan pemeriksaan nyata untuk seluruh target pantauan');
 
+Artisan::command('monitoring:record-history', function (TargetMonitorService $monitor): void {
+    $count = $monitor->recordDueHistories();
+
+    $this->info("Snapshot riwayat disimpan untuk {$count} target.");
+})->purpose('Simpan snapshot riwayat sesuai pengaturan');
+
 Schedule::command('monitoring:check')->everyMinute()->withoutOverlapping();
+Schedule::command('monitoring:record-history')->everySecond()->withoutOverlapping(1);
