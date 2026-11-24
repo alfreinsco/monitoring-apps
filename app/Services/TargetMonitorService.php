@@ -1,0 +1,442 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\MonitoredTarget;
+use App\Models\SecurityEvent;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
+use Throwable;
+
+class TargetMonitorService
+{
+    /**
+     * Jalankan pemeriksaan kesehatan & keamanan nyata untuk seluruh target atau satu target tertentu.
+     */
+    public function checkAll(): int
+    {
+        $targets = MonitoredTarget::all();
+
+        foreach ($targets as $target) {
+            $this->checkTarget($target);
+        }
+
+        return $targets->count();
+    }
+
+    public function checkTarget(MonitoredTarget $target): MonitoredTarget
+    {
+        $previousStatus = $target->status;
+        $checkedAt = now()->format('H:i:s');
+
+        if ($target->kind === 'ip') {
+            $result = $this->probeIpTarget($target);
+        } else {
+            $result = $this->probeDomainTarget($target);
+        }
+
+        $history = is_array($target->history) ? $target->history : [];
+        $history[] = $result['latency_ms'];
+        if (count($history) > 12) {
+            $history = array_slice($history, -12);
+        }
+
+        $p95Ms = $this->calculateP95($history, $result['latency_ms']);
+        $uptime = $this->recalculateUptime((float) $target->uptime, $result['status']);
+
+        $target->update([
+            'status' => $result['status'],
+            'uptime' => $uptime,
+            'latency_ms' => $result['latency_ms'],
+            'p95_ms' => $p95Ms,
+            'http_status' => $result['http_status'],
+            'ssl_days_remaining' => $result['ssl_days_remaining'],
+            'tls_version' => $result['tls_version'],
+            'threat_score' => $result['threat_score'],
+            'last_checked' => "Pukul {$checkedAt} WIT",
+            'history' => $history,
+            'recent_findings' => $result['recent_findings'],
+        ]);
+
+        $this->recordEventIfNeeded($target, $previousStatus, $result);
+
+        return $target->fresh() ?? $target;
+    }
+
+    /**
+     * @return array{
+     *     status: string,
+     *     latency_ms: int,
+     *     http_status: string,
+     *     ssl_days_remaining: int|null,
+     *     tls_version: string,
+     *     threat_score: int,
+     *     recent_findings: list<string>
+     * }
+     */
+    private function probeDomainTarget(MonitoredTarget $target): array
+    {
+        $url = $target->url ?: "https://{$target->host}";
+        $sslInfo = $this->inspectSslCertificate($target->host);
+        $findings = [];
+        $threatScore = 5;
+
+        $start = hrtime(true);
+
+        try {
+            $response = Http::withHeaders([
+                'User-Agent' => 'SentinelGrid-UNPATTI-Monitor/1.0',
+                'Accept' => 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+            ])
+                ->withOptions([
+                    'verify' => false,
+                    'allow_redirects' => ['max' => 5],
+                ])
+                ->connectTimeout(6)
+                ->timeout(12)
+                ->get($url);
+
+            $latencyMs = max(1, (int) round((hrtime(true) - $start) / 1_000_000));
+            $code = $response->status();
+            $reason = $this->httpReasonPhrase($code);
+            $httpStatus = "{$code} {$reason}";
+
+            if ($code >= 500) {
+                $status = 'critical';
+                $threatScore += 65;
+                $findings[] = "Server mengembalikan galat HTTP {$httpStatus} saat pemindaian aktif";
+            } elseif ($code === 429 || $code === 403) {
+                $status = 'degraded';
+                $threatScore += 30;
+                $findings[] = "Endpoint merespons pembatasan akses/WAF ({$httpStatus})";
+            } elseif ($code >= 400) {
+                $status = 'degraded';
+                $threatScore += 35;
+                $findings[] = "Respons klien tidak normal ({$httpStatus}) pada rute utama";
+            } elseif ($latencyMs > 1800) {
+                $status = 'degraded';
+                $threatScore += 22;
+                $findings[] = "Latensi respons tinggi ({$latencyMs} ms), melampaui ambang 1.800 ms";
+            } else {
+                $status = 'healthy';
+                $findings[] = "Endpoint HTTPS aktif ({$httpStatus}) dengan RTT {$latencyMs} ms";
+            }
+
+            // Periksa header keamanan HTTP dasar
+            $hasHsts = $response->hasHeader('Strict-Transport-Security');
+            $hasXFrame = $response->hasHeader('X-Frame-Options') || $response->hasHeader('Content-Security-Policy');
+
+            if ($hasHsts) {
+                $findings[] = 'Header HSTS (Strict-Transport-Security) terdeteksi aktif';
+            } else {
+                $threatScore += 6;
+                $findings[] = 'Header HSTS belum terpasang pada respons utama';
+            }
+
+            if (! $hasXFrame) {
+                $threatScore += 5;
+            }
+
+            // Evaluasi SSL/TLS
+            if ($sslInfo['days_remaining'] !== null) {
+                if ($sslInfo['days_remaining'] <= 0) {
+                    $status = 'critical';
+                    $threatScore += 50;
+                    $findings[] = 'Sertifikat SSL/TLS telah kedaluwarsa!';
+                } elseif ($sslInfo['days_remaining'] <= 14) {
+                    if ($status === 'healthy') {
+                        $status = 'degraded';
+                    }
+                    $threatScore += 25;
+                    $findings[] = "Sertifikat SSL akan berakhir dalam {$sslInfo['days_remaining']} hari";
+                } else {
+                    $findings[] = "Sertifikat {$sslInfo['tls_version']} valid ({$sslInfo['days_remaining']} hari tersisa)";
+                }
+            } else {
+                $threatScore += 15;
+                $findings[] = 'Handshake SSL/TLS tidak dapat diverifikasi langsung pada port 443';
+            }
+
+            return [
+                'status' => $status,
+                'latency_ms' => $latencyMs,
+                'http_status' => $httpStatus,
+                'ssl_days_remaining' => $sslInfo['days_remaining'],
+                'tls_version' => $sslInfo['tls_version'],
+                'threat_score' => min(100, $threatScore),
+                'recent_findings' => array_slice($findings, 0, 4),
+            ];
+        } catch (Throwable $e) {
+            $latencyMs = max(1, (int) round((hrtime(true) - $start) / 1_000_000));
+            $message = Str::limit($e->getMessage(), 110);
+
+            return [
+                'status' => 'critical',
+                'latency_ms' => $latencyMs,
+                'http_status' => 'Timeout / Unreachable',
+                'ssl_days_remaining' => $sslInfo['days_remaining'],
+                'tls_version' => $sslInfo['tls_version'],
+                'threat_score' => 88,
+                'recent_findings' => [
+                    "Gagal menjangkau {$target->host}: {$message}",
+                    'Periksa layanan web server (Nginx/Apache), DNS, atau aturan firewall',
+                ],
+            ];
+        }
+    }
+
+    /**
+     * @return array{
+     *     status: string,
+     *     latency_ms: int,
+     *     http_status: string,
+     *     ssl_days_remaining: int|null,
+     *     tls_version: string,
+     *     threat_score: int,
+     *     recent_findings: list<string>
+     * }
+     */
+    private function probeIpTarget(MonitoredTarget $target): array
+    {
+        $ports = array_values(array_filter(array_map(
+            static fn (string $p): int => (int) trim($p),
+            explode(',', $target->monitored_ports ?: '443'),
+        )));
+
+        if ($ports === []) {
+            $ports = [443];
+        }
+
+        $openPorts = [];
+        $closedPorts = [];
+        $latencies = [];
+
+        foreach ($ports as $port) {
+            $start = hrtime(true);
+            $errno = 0;
+            $errstr = '';
+            $socket = @fsockopen($target->host, $port, $errno, $errstr, 3.0);
+            $elapsed = max(1, (int) round((hrtime(true) - $start) / 1_000_000));
+
+            if (is_resource($socket)) {
+                fclose($socket);
+                $openPorts[] = $port;
+                $latencies[] = $elapsed;
+            } else {
+                $closedPorts[] = $port;
+            }
+        }
+
+        $avgLatency = $latencies !== [] ? (int) round(array_sum($latencies) / count($latencies)) : 3000;
+
+        if ($openPorts === []) {
+            return [
+                'status' => 'critical',
+                'latency_ms' => $avgLatency,
+                'http_status' => 'TCP Unreachable',
+                'ssl_days_remaining' => null,
+                'tls_version' => 'Pemindaian TCP Langsung',
+                'threat_score' => 85,
+                'recent_findings' => [
+                    'Seluruh port pantauan ('.implode(', ', $ports).') tidak merespons',
+                    'Periksa konektivitas jaringan host atau aturan firewall',
+                ],
+            ];
+        }
+
+        $status = $closedPorts !== [] || $avgLatency > 350 ? 'degraded' : 'healthy';
+        $threatScore = $status === 'healthy' ? 12 : 42;
+        $findings = [
+            'Port TCP terbuka: '.implode(', ', $openPorts)." (RTT rata-rata {$avgLatency} ms)",
+        ];
+
+        if ($closedPorts !== []) {
+            $findings[] = 'Port tertutup/terfilter: '.implode(', ', $closedPorts);
+        }
+
+        return [
+            'status' => $status,
+            'latency_ms' => $avgLatency,
+            'http_status' => 'TCP/'.implode(',', $openPorts).' Aktif',
+            'ssl_days_remaining' => null,
+            'tls_version' => 'Pemindaian TCP Langsung',
+            'threat_score' => $threatScore,
+            'recent_findings' => $findings,
+        ];
+    }
+
+    /**
+     * @return array{days_remaining: int|null, tls_version: string}
+     */
+    private function inspectSslCertificate(string $host): array
+    {
+        try {
+            $context = stream_context_create([
+                'ssl' => [
+                    'capture_peer_cert' => true,
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                    'SNI_enabled' => true,
+                    'peer_name' => $host,
+                ],
+            ]);
+
+            $errno = 0;
+            $errstr = '';
+            $client = @stream_socket_client(
+                "ssl://{$host}:443",
+                $errno,
+                $errstr,
+                5.0,
+                STREAM_CLIENT_CONNECT,
+                $context,
+            );
+
+            if (! is_resource($client)) {
+                return ['days_remaining' => null, 'tls_version' => 'TLS Tidak Terbaca'];
+            }
+
+            $params = stream_context_get_params($client);
+            $cryptoMeta = stream_get_meta_data($client);
+            fclose($client);
+
+            $protocol = $cryptoMeta['crypto']['protocol'] ?? 'TLS 1.3';
+            $tlsVersion = str_starts_with(strtoupper((string) $protocol), 'TLS') ? strtoupper((string) $protocol) : 'TLS 1.3';
+
+            $certResource = $params['options']['ssl']['peer_certificate'] ?? null;
+            if ($certResource === null) {
+                return ['days_remaining' => null, 'tls_version' => $tlsVersion];
+            }
+
+            $parsed = openssl_x509_parse($certResource);
+            if (! is_array($parsed) || ! isset($parsed['validTo_time_t'])) {
+                return ['days_remaining' => null, 'tls_version' => $tlsVersion];
+            }
+
+            $validTo = Carbon::createFromTimestamp((int) $parsed['validTo_time_t']);
+            $daysRemaining = (int) now()->diffInDays($validTo, false);
+
+            return [
+                'days_remaining' => max(0, $daysRemaining),
+                'tls_version' => $tlsVersion,
+            ];
+        } catch (Throwable) {
+            return ['days_remaining' => null, 'tls_version' => 'TLS 1.3'];
+        }
+    }
+
+    /**
+     * @param  list<int>  $history
+     */
+    private function calculateP95(array $history, int $fallback): int
+    {
+        if ($history === []) {
+            return $fallback;
+        }
+
+        sort($history);
+        $index = (int) ceil(count($history) * 0.95) - 1;
+        $index = max(0, min(count($history) - 1, $index));
+
+        return (int) $history[$index];
+    }
+
+    private function recalculateUptime(float $currentUptime, string $status): float
+    {
+        $sampleScore = match ($status) {
+            'healthy' => 100.0,
+            'degraded' => 98.5,
+            default => 90.0,
+        };
+
+        $updated = ($currentUptime * 0.92) + ($sampleScore * 0.08);
+
+        return round(min(100.0, max(0.0, $updated)), 2);
+    }
+
+    /**
+     * @param  array{
+     *     status: string,
+     *     latency_ms: int,
+     *     http_status: string,
+     *     ssl_days_remaining: int|null,
+     *     tls_version: string,
+     *     threat_score: int,
+     *     recent_findings: list<string>
+     * }  $result
+     */
+    private function recordEventIfNeeded(MonitoredTarget $target, string $previousStatus, array $result): void
+    {
+        $statusChanged = $previousStatus !== $result['status'];
+        $sslExpiring = $result['ssl_days_remaining'] !== null && $result['ssl_days_remaining'] <= 14;
+
+        if (! $statusChanged && ! $sslExpiring && $result['status'] === 'healthy') {
+            return;
+        }
+
+        if ($result['status'] === 'critical') {
+            SecurityEvent::create([
+                'timestamp' => now()->format('H:i:s'),
+                'target' => $target->host,
+                'severity' => 'high',
+                'category' => 'Gangguan Layanan / Down',
+                'summary' => "{$target->host} berstatus KRITIS ({$result['http_status']}, RTT {$result['latency_ms']} ms)",
+                'mitigation' => 'Segera periksa layanan web server, koneksi upstream, dan log error aplikasi pada host terkait.',
+            ]);
+
+            return;
+        }
+
+        if ($result['status'] === 'degraded' || $sslExpiring) {
+            SecurityEvent::create([
+                'timestamp' => now()->format('H:i:s'),
+                'target' => $target->host,
+                'severity' => 'medium',
+                'category' => $sslExpiring ? 'Peringatan Sertifikat SSL' : 'Degradasi Performa / HTTP',
+                'summary' => $result['recent_findings'][0] ?? "{$target->host} mengalami penurunan performa ({$result['http_status']})",
+                'mitigation' => $sslExpiring
+                    ? 'Jalankan pembaruan sertifikat SSL (Certbot/ACME) sebelum masa berlaku habis.'
+                    : 'Evaluasi beban server, cache reverse proxy, serta aturan rate-limit pada endpoint.',
+            ]);
+
+            return;
+        }
+
+        if ($statusChanged && $result['status'] === 'healthy') {
+            SecurityEvent::create([
+                'timestamp' => now()->format('H:i:s'),
+                'target' => $target->host,
+                'severity' => 'low',
+                'category' => 'Pemulihan Layanan',
+                'summary' => "{$target->host} kembali NORMAL ({$result['http_status']}, {$result['latency_ms']} ms)",
+                'mitigation' => 'Pantau stabilitas respons selama 15 menit ke depan untuk memastikan tidak terjadi fluktuasi ulang.',
+            ]);
+        }
+    }
+
+    private function httpReasonPhrase(int $code): string
+    {
+        return match ($code) {
+            200 => 'OK',
+            201 => 'Created',
+            301 => 'Moved',
+            302 => 'Found',
+            400 => 'Bad Request',
+            401 => 'Unauthorized',
+            403 => 'Forbidden',
+            404 => 'Not Found',
+            429 => 'Too Many Requests',
+            500 => 'Internal Server Error',
+            502 => 'Bad Gateway',
+            503 => 'Service Unavailable',
+            504 => 'Gateway Timeout',
+            default => 'HTTP',
+        };
+    }
+}
+
+function StrLimit(string $value, int $limit): string
+{
+    return mb_strlen($value) > $limit ? mb_substr($value, 0, $limit - 3).'...' : $value;
+}
