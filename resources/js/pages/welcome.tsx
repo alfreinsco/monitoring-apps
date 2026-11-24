@@ -1,21 +1,11 @@
-import { Head, useForm, usePoll } from '@inertiajs/react';
+import { Head, Link, useForm, usePoll } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import { store } from '@/actions/App/Http/Controllers/MonitoringController';
+import { home } from '@/routes';
+import { index as notesIndex } from '@/routes/notes';
 
 type TargetKind = 'domain' | 'ip';
 type TargetStatus = 'healthy' | 'degraded' | 'critical';
-type ThreatSeverity = 'low' | 'medium' | 'high';
-
-interface SecurityEvent {
-    id: string;
-    timestamp: string;
-    target: string;
-    severity: ThreatSeverity;
-    category: string;
-    summary: string;
-    mitigation: string;
-}
-
 interface MonitoredTarget {
     id: string;
     label: string;
@@ -38,7 +28,6 @@ interface MonitoredTarget {
 
 interface WelcomeProps {
     initialTargets: MonitoredTarget[];
-    initialEvents: SecurityEvent[];
 }
 
 function normalizeTargetInput(
@@ -80,17 +69,6 @@ function statusLabel(status: TargetStatus): string {
     }
 }
 
-function severityLabel(severity: ThreatSeverity): string {
-    switch (severity) {
-        case 'high':
-            return 'Tinggi';
-        case 'medium':
-            return 'Sedang';
-        case 'low':
-            return 'Rendah';
-    }
-}
-
 function statusBadgeClasses(status: TargetStatus): string {
     switch (status) {
         case 'healthy':
@@ -113,23 +91,8 @@ function statusDotClasses(status: TargetStatus): string {
     }
 }
 
-function severityBadgeClasses(severity: ThreatSeverity): string {
-    switch (severity) {
-        case 'high':
-            return 'bg-rose-950/90 text-rose-300 border-rose-400/50';
-        case 'medium':
-            return 'bg-amber-950/90 text-amber-300 border-amber-400/50';
-        case 'low':
-            return 'bg-cyan-950/90 text-cyan-300 border-cyan-400/50';
-    }
-}
-
-export default function Welcome({
-    initialTargets,
-    initialEvents,
-}: WelcomeProps) {
+export default function Welcome({ initialTargets }: WelcomeProps) {
     const [targets, setTargets] = useState<MonitoredTarget[]>(initialTargets);
-    const [events, setEvents] = useState<SecurityEvent[]>(initialEvents);
     const [selectedId, setSelectedId] = useState<string>(
         initialTargets[0]?.id ?? '',
     );
@@ -143,7 +106,7 @@ export default function Welcome({
     const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
     const { start: startPolling, stop: stopPolling } = usePoll(10000, {
-        only: ['initialTargets', 'initialEvents'],
+        only: ['initialTargets'],
     }, {
         autoStart: true,
         mode: 'rest',
@@ -164,10 +127,6 @@ export default function Welcome({
             setSelectedId(initialTargets[0].id);
         }
     }, [initialTargets]);
-
-    useEffect(() => {
-        setEvents(initialEvents);
-    }, [initialEvents]);
 
     useEffect(() => {
         if (liveStream) {
@@ -279,7 +238,7 @@ export default function Welcome({
 
     return (
         <>
-            <Head title="SentinelGrid — Pemantauan Aplikasi, Web & Keamanan Waktu Nyata" />
+            <Head title="Monitoring Domain & IP" />
             <div className="cyber-grid-bg min-h-screen bg-[#050811] text-slate-100 selection:bg-cyan-400/30 selection:text-cyan-100">
                 {/* Header Operasional Utama */}
                 <header className="sticky top-0 z-20 border-b border-cyan-400/25 bg-[#070b16]/95 backdrop-blur-md">
@@ -308,7 +267,7 @@ export default function Welcome({
                             <div>
                                 <div className="flex flex-wrap items-center gap-2.5">
                                     <h1 className="text-base font-bold tracking-tight text-white sm:text-lg">
-                                        SentinelGrid SOC &amp; Pemantau Aplikasi
+                                        Monitoring Domain &amp; IP
                                     </h1>
                                     <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/50 bg-cyan-950/90 px-2.5 py-0.5 font-mono text-xs font-semibold text-cyan-300">
                                         <span
@@ -327,7 +286,7 @@ export default function Welcome({
                             </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div id="pengaturan" className="flex flex-wrap items-center gap-2 scroll-mt-28">
                             <button
                                 type="button"
                                 onClick={() =>
@@ -358,6 +317,29 @@ export default function Welcome({
                             </button>
                         </div>
                     </div>
+                    <nav aria-label="Navigasi utama" className="border-t border-cyan-400/15">
+                        <div className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-2 sm:px-6 lg:px-8">
+                            <Link
+                                href={home.url()}
+                                aria-current="page"
+                                className="shrink-0 rounded-lg bg-cyan-950/70 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+                            >
+                                Monitor
+                            </Link>
+                            <Link
+                                href={notesIndex.url()}
+                                className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-cyan-950/60 hover:text-cyan-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+                            >
+                                Catatan
+                            </Link>
+                            <a
+                                href="#pengaturan"
+                                className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-cyan-950/60 hover:text-cyan-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+                            >
+                                Pengaturan
+                            </a>
+                        </div>
+                    </nav>
                 </header>
 
                 <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -528,8 +510,8 @@ export default function Welcome({
                         </div>
                     </section>
 
-                    {/* Tata Letak Utama: Daftar Target + Inspektor Detail & Aliran Keamanan */}
-                    <section className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+                    {/* Tata Letak Utama: Daftar Target dan Inspektor Detail */}
+                    <section id="monitor" className="grid scroll-mt-32 grid-cols-1 gap-6 lg:grid-cols-12">
                         {/* Tabel Registri Target */}
                         <div className="cyber-panel space-y-4 rounded-2xl p-5 lg:col-span-7">
                             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
@@ -839,53 +821,6 @@ export default function Welcome({
                                 </div>
                             )}
 
-                            {/* Aliran Kejadian Keamanan Langsung */}
-                            <div className="cyber-panel rounded-2xl p-5">
-                                <div className="mb-3 flex items-center justify-between">
-                                    <div>
-                                        <h3 className="text-sm font-bold text-white">
-                                            Aliran Kejadian Keamanan &amp;
-                                            Operasional
-                                        </h3>
-                                        <p className="text-xs text-slate-300">
-                                            Deteksi anomali, perubahan status,
-                                            dan rekomendasi mitigasi.
-                                        </p>
-                                    </div>
-                                    <span className="rounded-full border border-cyan-400/35 bg-cyan-950/80 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-cyan-300">
-                                        {events.length} log
-                                    </span>
-                                </div>
-
-                                <div className="space-y-3">
-                                    {events.map((evt) => (
-                                        <div
-                                            key={evt.id}
-                                            className="rounded-xl border border-slate-800 bg-[#060a14]/90 p-3"
-                                        >
-                                            <div className="flex items-center justify-between gap-2">
-                                                <span
-                                                    className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase ${severityBadgeClasses(evt.severity)}`}
-                                                >
-                                                    {severityLabel(
-                                                        evt.severity,
-                                                    )}{' '}
-                                                    · {evt.category}
-                                                </span>
-                                                <span className="font-mono text-[11px] text-slate-400">
-                                                    {evt.timestamp}
-                                                </span>
-                                            </div>
-                                            <p className="mt-1.5 text-xs font-semibold text-white">
-                                                {evt.summary}
-                                            </p>
-                                            <p className="mt-1 text-[11px] text-slate-300">
-                                                Mitigasi: {evt.mitigation}
-                                            </p>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
                         </div>
                     </section>
                 </main>

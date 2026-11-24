@@ -7,7 +7,9 @@ use App\Models\SecurityEvent;
 use App\Services\TargetMonitorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -38,13 +40,61 @@ class MonitoringController extends Controller
                 'recentFindings' => $target->recent_findings ?? [],
             ]);
 
-        $events = SecurityEvent::query()
-            ->orderByDesc('id')
-            ->limit(20)
-            ->get()
-            ->map(fn (SecurityEvent $event): array => [
+        return Inertia::render('welcome', [
+            'initialTargets' => $targets,
+        ]);
+    }
+
+    public function notes(Request $request): Response
+    {
+        $validated = $request->validate([
+            'domain' => ['nullable', 'string', 'max:255'],
+            'from' => ['nullable', 'date_format:Y-m-d\\TH:i'],
+            'to' => ['nullable', 'date_format:Y-m-d\\TH:i'],
+        ]);
+
+        if (($validated['from'] ?? '') !== '' && ($validated['to'] ?? '') !== '' && $validated['to'] < $validated['from']) {
+            throw ValidationException::withMessages([
+                'to' => 'Waktu akhir harus sama dengan atau setelah waktu awal.',
+            ]);
+        }
+
+        $domains = MonitoredTarget::query()
+            ->where('kind', 'domain')
+            ->orderBy('host')
+            ->get(['host', 'label'])
+            ->map(fn (MonitoredTarget $target): array => [
+                'host' => $target->host,
+                'label' => $target->label,
+            ]);
+
+        $selectedDomain = $validated['domain'] ?? '';
+        if ($selectedDomain !== '' && ! $domains->contains('host', $selectedDomain)) {
+            abort(404);
+        }
+
+        $eventsQuery = SecurityEvent::query()
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
+
+        if ($selectedDomain !== '') {
+            $eventsQuery->where('target', $selectedDomain);
+        }
+
+        if (($validated['from'] ?? '') !== '') {
+            $eventsQuery->where('created_at', '>=', Carbon::createFromFormat('Y-m-d\\TH:i', $validated['from']));
+        }
+
+        if (($validated['to'] ?? '') !== '') {
+            $eventsQuery->where('created_at', '<', Carbon::createFromFormat('Y-m-d\\TH:i', $validated['to'])->addMinute());
+        }
+
+        $events = $eventsQuery
+            ->paginate(10)
+            ->withQueryString()
+            ->through(fn (SecurityEvent $event): array => [
                 'id' => (string) $event->id,
-                'timestamp' => $event->timestamp,
+                'timestamp' => $event->created_at?->format('d M Y, H:i'),
                 'target' => $event->target,
                 'severity' => $event->severity,
                 'category' => $event->category,
@@ -52,9 +102,14 @@ class MonitoringController extends Controller
                 'mitigation' => $event->mitigation,
             ]);
 
-        return Inertia::render('welcome', [
-            'initialTargets' => $targets,
-            'initialEvents' => $events,
+        return Inertia::render('catatan', [
+            'events' => $events,
+            'domains' => $domains,
+            'filters' => [
+                'domain' => $selectedDomain,
+                'from' => $validated['from'] ?? '',
+                'to' => $validated['to'] ?? '',
+            ],
         ]);
     }
 

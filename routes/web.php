@@ -4,4 +4,5 @@ use App\Http\Controllers\MonitoringController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [MonitoringController::class, 'index'])->name('home');
+Route::get('/catatan', [MonitoringController::class, 'notes'])->name('notes.index');
 Route::post('/targets', [MonitoringController::class, 'store'])->name('targets.store');
