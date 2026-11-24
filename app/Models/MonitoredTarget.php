@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MonitoredTarget extends Model
 {
@@ -38,5 +39,10 @@ class MonitoredTarget extends Model
             'history' => 'array',
             'recent_findings' => 'array',
         ];
+    }
+
+    public function histories(): HasMany
+    {
+        return $this->hasMany(MonitoringHistory::class);
     }
 }

@@ -3,14 +3,16 @@
 namespace App\Services;
 
 use App\Models\MonitoredTarget;
-use App\Models\SecurityEvent;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Throwable;
 
 class TargetMonitorService
 {
+    public function __construct(private readonly MonitoringNotifier $notifier) {}
+
     /**
      * Jalankan pemeriksaan kesehatan & keamanan nyata untuk seluruh target atau satu target tertentu.
      */
@@ -27,8 +29,8 @@ class TargetMonitorService
 
     public function checkTarget(MonitoredTarget $target): MonitoredTarget
     {
-        $previousStatus = $target->status;
-        $checkedAt = now()->format('H:i:s');
+        $previousStatus = (string) $target->status;
+        $checkedAt = now();
 
         if ($target->kind === 'ip') {
             $result = $this->probeIpTarget($target);
@@ -45,23 +47,40 @@ class TargetMonitorService
         $p95Ms = $this->calculateP95($history, $result['latency_ms']);
         $uptime = $this->recalculateUptime((float) $target->uptime, $result['status']);
 
-        $target->update([
-            'status' => $result['status'],
-            'uptime' => $uptime,
-            'latency_ms' => $result['latency_ms'],
-            'p95_ms' => $p95Ms,
-            'http_status' => $result['http_status'],
-            'ssl_days_remaining' => $result['ssl_days_remaining'],
-            'tls_version' => $result['tls_version'],
-            'threat_score' => $result['threat_score'],
-            'last_checked' => "Pukul {$checkedAt} WIT",
-            'history' => $history,
-            'recent_findings' => $result['recent_findings'],
-        ]);
+        DB::transaction(function () use ($target, $result, $uptime, $p95Ms, $history, $checkedAt): void {
+            $target->update([
+                'status' => $result['status'],
+                'uptime' => $uptime,
+                'latency_ms' => $result['latency_ms'],
+                'p95_ms' => $p95Ms,
+                'http_status' => $result['http_status'],
+                'ssl_days_remaining' => $result['ssl_days_remaining'],
+                'tls_version' => $result['tls_version'],
+                'threat_score' => $result['threat_score'],
+                'last_checked' => "Pukul {$checkedAt->format('H:i:s')} WIT",
+                'history' => $history,
+                'recent_findings' => $result['recent_findings'],
+            ]);
 
-        $this->recordEventIfNeeded($target, $previousStatus, $result);
+            $target->histories()->create([
+                'host' => $target->host,
+                'status' => $result['status'],
+                'uptime' => $uptime,
+                'latency_ms' => $result['latency_ms'],
+                'p95_ms' => $p95Ms,
+                'http_status' => $result['http_status'],
+                'ssl_days_remaining' => $result['ssl_days_remaining'],
+                'tls_version' => $result['tls_version'],
+                'threat_score' => $result['threat_score'],
+                'findings' => $result['recent_findings'],
+                'checked_at' => $checkedAt,
+            ]);
+        });
 
-        return $target->fresh() ?? $target;
+        $updatedTarget = $target->fresh() ?? $target;
+        $this->notifier->notifyStatusChange($updatedTarget, $previousStatus);
+
+        return $updatedTarget;
     }
 
     /**
@@ -378,66 +397,6 @@ class TargetMonitorService
         $updated = ($currentUptime * 0.92) + ($sampleScore * 0.08);
 
         return round(min(100.0, max(0.0, $updated)), 2);
-    }
-
-    /**
-     * @param  array{
-     *     status: string,
-     *     latency_ms: int,
-     *     http_status: string,
-     *     ssl_days_remaining: int|null,
-     *     tls_version: string,
-     *     threat_score: int,
-     *     recent_findings: list<string>
-     * }  $result
-     */
-    private function recordEventIfNeeded(MonitoredTarget $target, string $previousStatus, array $result): void
-    {
-        $statusChanged = $previousStatus !== $result['status'];
-        $sslExpiring = $result['ssl_days_remaining'] !== null && $result['ssl_days_remaining'] <= 14;
-
-        if (! $statusChanged) {
-            return;
-        }
-
-        if ($result['status'] === 'critical') {
-            SecurityEvent::create([
-                'timestamp' => now()->format('H:i:s'),
-                'target' => $target->host,
-                'severity' => 'high',
-                'category' => 'Gangguan Layanan / Down',
-                'summary' => "{$target->host} berstatus KRITIS ({$result['http_status']}, RTT {$result['latency_ms']} ms)",
-                'mitigation' => 'Segera periksa layanan web server, koneksi upstream, dan log error aplikasi pada host terkait.',
-            ]);
-
-            return;
-        }
-
-        if ($result['status'] === 'degraded' || $sslExpiring) {
-            SecurityEvent::create([
-                'timestamp' => now()->format('H:i:s'),
-                'target' => $target->host,
-                'severity' => 'medium',
-                'category' => $sslExpiring ? 'Peringatan Sertifikat SSL' : 'Degradasi Performa / HTTP',
-                'summary' => $result['recent_findings'][0] ?? "{$target->host} mengalami penurunan performa ({$result['http_status']})",
-                'mitigation' => $sslExpiring
-                    ? 'Jalankan pembaruan sertifikat SSL (Certbot/ACME) sebelum masa berlaku habis.'
-                    : 'Evaluasi beban server, cache reverse proxy, serta aturan rate-limit pada endpoint.',
-            ]);
-
-            return;
-        }
-
-        if ($statusChanged && $result['status'] === 'healthy') {
-            SecurityEvent::create([
-                'timestamp' => now()->format('H:i:s'),
-                'target' => $target->host,
-                'severity' => 'low',
-                'category' => 'Pemulihan Layanan',
-                'summary' => "{$target->host} kembali NORMAL ({$result['http_status']}, {$result['latency_ms']} ms)",
-                'mitigation' => 'Pantau stabilitas respons selama 15 menit ke depan untuk memastikan tidak terjadi fluktuasi ulang.',
-            ]);
-        }
     }
 
     private function httpReasonPhrase(int $code): string

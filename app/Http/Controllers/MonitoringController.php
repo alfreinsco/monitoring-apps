@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\MonitoredTarget;
-use App\Models\SecurityEvent;
+use App\Models\MonitoringHistory;
 use App\Services\TargetMonitorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -45,7 +45,7 @@ class MonitoringController extends Controller
         ]);
     }
 
-    public function notes(Request $request): Response
+    public function riwayat(Request $request): Response
     {
         $validated = $request->validate([
             'domain' => ['nullable', 'string', 'max:255'],
@@ -73,37 +73,46 @@ class MonitoringController extends Controller
             abort(404);
         }
 
-        $eventsQuery = SecurityEvent::query()
-            ->orderByDesc('created_at')
+        $historyQuery = MonitoringHistory::query()
+            ->with('monitoredTarget:id,label,kind')
+            ->orderByDesc('checked_at')
             ->orderByDesc('id');
 
         if ($selectedDomain !== '') {
-            $eventsQuery->where('target', $selectedDomain);
+            $historyQuery->where('host', $selectedDomain);
         }
 
         if (($validated['from'] ?? '') !== '') {
-            $eventsQuery->where('created_at', '>=', Carbon::createFromFormat('Y-m-d\\TH:i', $validated['from']));
+            $historyQuery->where('checked_at', '>=', Carbon::createFromFormat('Y-m-d\\TH:i', $validated['from']));
         }
 
         if (($validated['to'] ?? '') !== '') {
-            $eventsQuery->where('created_at', '<', Carbon::createFromFormat('Y-m-d\\TH:i', $validated['to'])->addMinute());
+            $historyQuery->where('checked_at', '<', Carbon::createFromFormat('Y-m-d\\TH:i', $validated['to'])->addMinute());
         }
 
-        $events = $eventsQuery
+        $records = $historyQuery
             ->paginate(10)
             ->withQueryString()
-            ->through(fn (SecurityEvent $event): array => [
-                'id' => (string) $event->id,
-                'timestamp' => $event->created_at?->format('d M Y, H:i'),
-                'target' => $event->target,
-                'severity' => $event->severity,
-                'category' => $event->category,
-                'summary' => $event->summary,
-                'mitigation' => $event->mitigation,
+            ->through(fn (MonitoringHistory $record): array => [
+                'id' => (string) $record->id,
+                'host' => $record->host,
+                'label' => $record->monitoredTarget?->label ?? $record->host,
+                'kind' => $record->monitoredTarget?->kind
+                    ?? (filter_var($record->host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? 'ip' : 'domain'),
+                'checkedAt' => $record->checked_at->format('d M Y, H:i:s'),
+                'status' => $record->status,
+                'uptime' => $record->uptime,
+                'latencyMs' => $record->latency_ms,
+                'p95Ms' => $record->p95_ms,
+                'httpStatus' => $record->http_status,
+                'sslDaysRemaining' => $record->ssl_days_remaining,
+                'tlsVersion' => $record->tls_version,
+                'threatScore' => $record->threat_score,
+                'findings' => $record->findings ?? [],
             ]);
 
-        return Inertia::render('catatan', [
-            'events' => $events,
+        return Inertia::render('riwayat', [
+            'records' => $records,
             'domains' => $domains,
             'filters' => [
                 'domain' => $selectedDomain,
@@ -184,19 +193,6 @@ class MonitoringController extends Controller
                 "Pemindaian awal terdaftar untuk {$normalizedHost}",
                 'Pemeriksaan konektivitas pertama sedang berjalan',
             ],
-        ]);
-
-        SecurityEvent::create([
-            'timestamp' => now()->format('H:i:s'),
-            'target' => $target->host,
-            'severity' => 'low',
-            'category' => 'Target Terdaftar',
-            'summary' => sprintf(
-                'Target %s baru (%s) mulai dipantau secara langsung',
-                $kind === 'domain' ? 'DOMAIN' : 'IP',
-                $target->host,
-            ),
-            'mitigation' => 'Verifikasi aturan firewall & ambang peringatan sesuai tingkat kekritisan aset.',
         ]);
 
         $monitor->checkTarget($target);

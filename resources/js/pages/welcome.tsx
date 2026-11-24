@@ -2,7 +2,8 @@ import { Head, Link, useForm, usePoll } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import { store } from '@/actions/App/Http/Controllers/MonitoringController';
 import { home } from '@/routes';
-import { index as notesIndex } from '@/routes/notes';
+import { index as riwayatIndex } from '@/routes/riwayat';
+import { index as pengaturanIndex } from '@/routes/pengaturan';
 
 type TargetKind = 'domain' | 'ip';
 type TargetStatus = 'healthy' | 'degraded' | 'critical';
@@ -327,13 +328,13 @@ export default function Welcome({ initialTargets }: WelcomeProps) {
                                 Monitor
                             </Link>
                             <Link
-                                href={notesIndex.url()}
+                                href={riwayatIndex.url()}
                                 className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-cyan-950/60 hover:text-cyan-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
                             >
-                                Catatan
+                                Riwayat
                             </Link>
                             <a
-                                href="#pengaturan"
+                                href={pengaturanIndex.url()}
                                 className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-cyan-950/60 hover:text-cyan-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
                             >
                                 Pengaturan
@@ -802,7 +803,7 @@ export default function Welcome({ initialTargets }: WelcomeProps) {
 
                                     <div className="mt-4 space-y-1.5">
                                         <span className="text-xs font-semibold text-slate-200">
-                                            Catatan Keamanan &amp; Kesehatan
+                                            Temuan Keamanan &amp; Kesehatan
                                         </span>
                                         <ul className="space-y-1.5 text-xs text-slate-300">
                                             {selectedTarget.recentFindings.map(
