@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\MonitoredTarget;
 use App\Models\Pengaturan;
+use App\Services\MonitoringNotifier;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class PengaturanController extends Controller
 {
@@ -34,12 +36,10 @@ class PengaturanController extends Controller
             'telegram' => [
                 'enabled' => (bool) ($telegram['enabled'] ?? false),
                 'tokenConfigured' => filled($telegram['bot_token'] ?? null),
-                'statuses' => $telegram['statuses'] ?? self::DEFAULT_STATUSES,
                 'clients' => $this->telegramClients($telegram, $targets->pluck('id')->all()),
             ],
             'googleChat' => [
                 'enabled' => (bool) ($googleChat['enabled'] ?? false),
-                'statuses' => $googleChat['statuses'] ?? self::DEFAULT_STATUSES,
                 'clients' => $this->googleChatClients($googleChat, $targets->pluck('id')->all()),
             ],
         ]);
@@ -51,11 +51,11 @@ class PengaturanController extends Controller
             'enabled' => ['required', 'boolean'],
             'bot_token' => ['nullable', 'string', 'max:4096'],
             'clear_token' => ['sometimes', 'boolean'],
-            'statuses' => ['present', 'array', 'max:3'],
-            'statuses.*' => ['string', 'in:healthy,degraded,critical'],
             'clients' => ['present', 'array', 'list', 'max:50'],
             'clients.*.id' => ['required', 'string', 'max:64', 'distinct'],
-            'clients.*.chat_id' => ['required', 'string', 'max:255', 'distinct'],
+            'clients.*.chat_id' => ['nullable', 'string', 'max:255', 'distinct'],
+            'clients.*.statuses' => ['present', 'array', 'max:3'],
+            'clients.*.statuses.*' => ['string', 'in:healthy,degraded,critical'],
             'clients.*.target_all' => ['required', 'boolean'],
             'clients.*.target_ids' => ['present', 'array', 'list'],
             'clients.*.target_ids.*' => ['integer', 'exists:monitored_targets,id'],
@@ -77,6 +77,12 @@ class PengaturanController extends Controller
 
         if ($validated['enabled']) {
             foreach ($validated['clients'] as $index => $client) {
+                if (trim((string) ($client['chat_id'] ?? '')) === '') {
+                    throw ValidationException::withMessages([
+                        "clients.{$index}.chat_id" => 'Isi Chat ID sebelum mengaktifkan client Telegram ini.',
+                    ]);
+                }
+
                 if (! $client['target_all'] && $client['target_ids'] === []) {
                     throw ValidationException::withMessages([
                         "clients.{$index}.target_ids" => 'Tambahkan minimal satu domain atau IP, atau pilih semua target.',
@@ -90,10 +96,10 @@ class PengaturanController extends Controller
             ['value' => [
                 'enabled' => (bool) $validated['enabled'],
                 'bot_token' => $botToken,
-                'statuses' => array_values(array_unique($validated['statuses'])),
                 'clients' => array_map(fn (array $client): array => [
                     'id' => $client['id'],
-                    'chat_id' => trim($client['chat_id']),
+                    'chat_id' => trim((string) ($client['chat_id'] ?? '')),
+                    'statuses' => array_values(array_unique($client['statuses'])),
                     'target_all' => (bool) $client['target_all'],
                     'target_ids' => array_values(array_unique(array_map('intval', $client['target_ids']))),
                 ], $validated['clients']),
@@ -103,16 +109,53 @@ class PengaturanController extends Controller
         return to_route('pengaturan.index');
     }
 
+    public function testTelegram(Request $request, MonitoringNotifier $notifier): RedirectResponse
+    {
+        $validated = $request->validate([
+            'bot_token' => ['nullable', 'string', 'max:4096'],
+            'clear_token' => ['sometimes', 'boolean'],
+            'clients' => ['required', 'array', 'list', 'min:1', 'max:50'],
+            'clients.*.id' => ['required', 'string', 'max:64'],
+            'clients.*.label' => ['nullable', 'string', 'max:120'],
+            'clients.*.chat_id' => ['required', 'string', 'max:255'],
+        ]);
+
+        $currentValue = Pengaturan::query()->find('telegram')?->value ?? [];
+        $token = trim((string) ($validated['bot_token'] ?? ''));
+        if ($token === '') {
+            if ($validated['clear_token'] ?? false) {
+                throw ValidationException::withMessages([
+                    'bot_token' => 'Masukkan token bot untuk melakukan tes koneksi.',
+                ]);
+            }
+
+            try {
+                $token = Crypt::decryptString($currentValue['bot_token'] ?? '');
+            } catch (Throwable) {
+                throw ValidationException::withMessages([
+                    'bot_token' => 'Masukkan token bot sebelum melakukan tes koneksi.',
+                ]);
+            }
+        }
+
+        Inertia::flash('connectionTest', [
+            'channel' => 'telegram',
+            'results' => $notifier->testTelegram($token, $validated['clients']),
+        ]);
+
+        return to_route('pengaturan.index');
+    }
+
     public function updateGoogleChat(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             'enabled' => ['required', 'boolean'],
-            'statuses' => ['present', 'array', 'max:3'],
-            'statuses.*' => ['string', 'in:healthy,degraded,critical'],
             'clients' => ['present', 'array', 'list', 'max:50'],
             'clients.*.id' => ['required', 'string', 'max:64', 'distinct'],
             'clients.*.webhook_url' => ['nullable', 'string', 'max:4096', 'url', 'starts_with:https://'],
             'clients.*.clear_webhook' => ['sometimes', 'boolean'],
+            'clients.*.statuses' => ['present', 'array', 'max:3'],
+            'clients.*.statuses.*' => ['string', 'in:healthy,degraded,critical'],
             'clients.*.target_all' => ['required', 'boolean'],
             'clients.*.target_ids' => ['present', 'array', 'list'],
             'clients.*.target_ids.*' => ['integer', 'exists:monitored_targets,id'],
@@ -155,6 +198,7 @@ class PengaturanController extends Controller
             $clients[] = [
                 'id' => $client['id'],
                 'webhook_url' => $webhookSecret,
+                'statuses' => array_values(array_unique($client['statuses'])),
                 'target_all' => (bool) $client['target_all'],
                 'target_ids' => array_values(array_unique(array_map('intval', $client['target_ids']))),
             ];
@@ -180,7 +224,6 @@ class PengaturanController extends Controller
             ['key' => 'google_chat'],
             ['value' => [
                 'enabled' => (bool) $validated['enabled'],
-                'statuses' => array_values(array_unique($validated['statuses'])),
                 'clients' => $clients,
             ]],
         );
@@ -188,9 +231,72 @@ class PengaturanController extends Controller
         return to_route('pengaturan.index');
     }
 
+    public function testGoogleChat(Request $request, MonitoringNotifier $notifier): RedirectResponse
+    {
+        $validated = $request->validate([
+            'clients' => ['required', 'array', 'list', 'min:1', 'max:50'],
+            'clients.*.id' => ['required', 'string', 'max:64'],
+            'clients.*.label' => ['nullable', 'string', 'max:120'],
+            'clients.*.webhook_url' => ['nullable', 'string', 'max:4096', 'url', 'starts_with:https://'],
+            'clients.*.clear_webhook' => ['sometimes', 'boolean'],
+        ]);
+
+        $currentSettings = Pengaturan::query()->find('google_chat')?->value ?? [];
+        $currentClients = $currentSettings['clients'] ?? [];
+        if (! array_key_exists('clients', $currentSettings) && filled($currentSettings['webhook_url'] ?? null)) {
+            $currentClients = [['id' => 'legacy-0', 'webhook_url' => $currentSettings['webhook_url']]];
+        }
+
+        $clients = [];
+        foreach ($validated['clients'] as $index => $client) {
+            $webhookUrl = trim((string) ($client['webhook_url'] ?? ''));
+            if ($webhookUrl !== '' && parse_url($webhookUrl, PHP_URL_HOST) !== 'chat.googleapis.com') {
+                throw ValidationException::withMessages([
+                    "clients.{$index}.webhook_url" => 'Gunakan URL incoming webhook resmi dari chat.googleapis.com.',
+                ]);
+            }
+
+            if ($webhookUrl === '') {
+                if ($client['clear_webhook'] ?? false) {
+                    throw ValidationException::withMessages([
+                        "clients.{$index}.webhook_url" => 'Masukkan URL webhook untuk melakukan tes koneksi.',
+                    ]);
+                }
+
+                $storedClient = collect($currentClients)->firstWhere('id', $client['id']);
+                if ($storedClient === null
+                    && ($currentClients[$index]['id'] ?? null) === null
+                    && $client['id'] === "legacy-{$index}") {
+                    $storedClient = $currentClients[$index];
+                }
+
+                try {
+                    $webhookUrl = Crypt::decryptString($storedClient['webhook_url'] ?? '');
+                } catch (Throwable) {
+                    throw ValidationException::withMessages([
+                        "clients.{$index}.webhook_url" => 'Masukkan URL webhook sebelum melakukan tes koneksi.',
+                    ]);
+                }
+            }
+
+            $clients[] = [
+                'id' => $client['id'],
+                'label' => $client['label'] ?? null,
+                'webhook_url' => $webhookUrl,
+            ];
+        }
+
+        Inertia::flash('connectionTest', [
+            'channel' => 'google_chat',
+            'results' => $notifier->testGoogleChat($clients),
+        ]);
+
+        return to_route('pengaturan.index');
+    }
+
     /** @param array<string, mixed> $settings
      * @param  list<int>  $allTargetIds
-     * @return list<array{id: string, chatId: string, targetIds: list<int>, targetAll: bool}>
+     * @return list<array{id: string, chatId: string, targetIds: list<int>, targetAll: bool, statuses: list<string>}>
      */
     private function telegramClients(array $settings, array $allTargetIds): array
     {
@@ -201,6 +307,7 @@ class PengaturanController extends Controller
                 'chatId' => (string) ($client['chat_id'] ?? ''),
                 'targetIds' => array_values(array_intersect(array_map('intval', $client['target_ids'] ?? []), $allTargetIds)),
                 'targetAll' => (bool) ($client['target_all'] ?? $this->targetsAreAll($client['target_ids'] ?? [], $allTargetIds)),
+                'statuses' => $client['statuses'] ?? $settings['statuses'] ?? self::DEFAULT_STATUSES,
             ], $clients, array_keys($clients));
         }
 
@@ -210,6 +317,7 @@ class PengaturanController extends Controller
                 'chatId' => (string) $settings['chat_id'],
                 'targetIds' => $allTargetIds,
                 'targetAll' => true,
+                'statuses' => $settings['statuses'] ?? self::DEFAULT_STATUSES,
             ]];
         }
 
@@ -218,7 +326,7 @@ class PengaturanController extends Controller
 
     /** @param array<string, mixed> $settings
      * @param  list<int>  $allTargetIds
-     * @return list<array{id: string, configured: bool, targetIds: list<int>, targetAll: bool}>
+     * @return list<array{id: string, configured: bool, targetIds: list<int>, targetAll: bool, statuses: list<string>}>
      */
     private function googleChatClients(array $settings, array $allTargetIds): array
     {
@@ -229,6 +337,7 @@ class PengaturanController extends Controller
                 'configured' => filled($client['webhook_url'] ?? null),
                 'targetIds' => array_values(array_intersect(array_map('intval', $client['target_ids'] ?? []), $allTargetIds)),
                 'targetAll' => (bool) ($client['target_all'] ?? $this->targetsAreAll($client['target_ids'] ?? [], $allTargetIds)),
+                'statuses' => $client['statuses'] ?? $settings['statuses'] ?? self::DEFAULT_STATUSES,
             ], $clients, array_keys($clients));
         }
 
@@ -238,6 +347,7 @@ class PengaturanController extends Controller
                 'configured' => true,
                 'targetIds' => $allTargetIds,
                 'targetAll' => true,
+                'statuses' => $settings['statuses'] ?? self::DEFAULT_STATUSES,
             ]];
         }
 
