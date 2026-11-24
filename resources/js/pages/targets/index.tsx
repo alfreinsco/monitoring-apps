@@ -2,6 +2,7 @@ import { Head, router, useForm } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { destroy as deleteTarget, store as storeTarget, update as updateTarget, updateActive as updateTargetActive } from '@/actions/App/Http/Controllers/MonitoringController';
 import { index as targetsIndex } from '@/routes/targets';
+import AppBrand from '@/components/app-brand';
 import AppNavbar from '@/components/app-navbar';
 
 type TargetKind = 'domain' | 'ip';
@@ -101,12 +102,8 @@ export default function TargetsIndex({ targets, search }: TargetsProps) {
             <Head title="Domain & IP | Monitoring Domain & IP" />
             <div className="cyber-grid-bg min-h-screen bg-[#050811] text-slate-100 selection:bg-cyan-400/30 selection:text-cyan-100">
                 <header className="sticky top-0 z-20 border-b border-cyan-400/25 bg-[#070b16]/95 backdrop-blur-md">
-                    <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3.5 sm:px-6 lg:px-8">
-                        <div className="cyber-glow-cyan flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/60 bg-cyan-500/20 text-cyan-300" aria-hidden="true">◎</div>
-                        <div>
-                            <h1 className="text-base font-bold tracking-tight text-white sm:text-lg">Monitoring Domain &amp; IP</h1>
-                            <p className="text-xs text-slate-300">Daftar target yang dipantau</p>
-                        </div>
+                    <div className="mx-auto max-w-7xl px-4 py-3.5 sm:px-6 lg:px-8">
+                        <AppBrand subtitle="Daftar target yang dipantau" />
                     </div>
                     <AppNavbar activePage="targets" />
                 </header>

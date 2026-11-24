@@ -1,6 +1,7 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { testGoogleChat, testTelegram, updateBrowserMonitoring, updateGoogleChat, updateHistory, updateTelegram } from '@/actions/App/Http/Controllers/PengaturanController';
+import AppBrand from '@/components/app-brand';
 import AppNavbar from '@/components/app-navbar';
 
 type Status = 'healthy' | 'degraded' | 'critical';
@@ -442,12 +443,8 @@ export default function Pengaturan({ targets, historySettings, browserMonitoring
             <Head title="Pengaturan | Monitoring Domain & IP" />
             <div className="cyber-grid-bg min-h-screen bg-[#050811] text-slate-100 selection:bg-cyan-400/30 selection:text-cyan-100">
                 <header className="sticky top-0 z-20 border-b border-cyan-400/25 bg-[#070b16]/95 backdrop-blur-md">
-                    <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3.5 sm:px-6 lg:px-8">
-                        <div className="cyber-glow-cyan flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/60 bg-cyan-500/20 text-cyan-300" aria-hidden="true">◎</div>
-                        <div>
-                            <h1 className="text-base font-bold tracking-tight text-white sm:text-lg">Monitoring Domain &amp; IP</h1>
-                            <p className="text-xs text-slate-300">Pengaturan notifikasi monitoring</p>
-                        </div>
+                    <div className="mx-auto max-w-7xl px-4 py-3.5 sm:px-6 lg:px-8">
+                        <AppBrand subtitle="Pengaturan notifikasi monitoring" />
                     </div>
                     <AppNavbar activePage="pengaturan" />
                 </header>

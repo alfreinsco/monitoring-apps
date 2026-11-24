@@ -1,5 +1,6 @@
 import { Head, usePoll } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
+import AppBrand from '@/components/app-brand';
 import AppNavbar from '@/components/app-navbar';
 
 type TargetKind = 'domain' | 'ip';
@@ -167,48 +168,15 @@ export default function Welcome({ initialTargets, monitoringIntervalSeconds }: W
                 {/* Header Operasional Utama */}
                 <header className="sticky top-0 z-20 border-b border-cyan-400/25 bg-[#070b16]/95 backdrop-blur-md">
                     <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-8">
-                        <div className="flex items-center gap-3">
-                            <div className="cyber-glow-cyan flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/60 bg-cyan-500/20 text-cyan-300">
-                                <svg
-                                    className="h-5 w-5"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2.2"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="M12 3l7 4v5c0 5-3 8-7 9-4-1-7-4-7-9V7l7-4z"
-                                    />
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="M9 12l2 2 4-4"
-                                    />
-                                </svg>
-                            </div>
-                            <div>
-                                <div className="flex flex-wrap items-center gap-2.5">
-                                    <h1 className="text-base font-bold tracking-tight text-white sm:text-lg">
-                                        Monitoring Domain &amp; IP
-                                    </h1>
-                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/50 bg-cyan-950/90 px-2.5 py-0.5 font-mono text-xs font-semibold text-cyan-300">
-                                        <span
-                                            className={`h-2 w-2 rounded-full ${liveStream ? 'animate-pulse bg-cyan-400 shadow-[0_0_8px_#22d3ee]' : 'bg-slate-500'}`}
-                                        />
-                                        {liveStream
-                                            ? 'Pemantauan Aktif'
-                                            : 'Dijeda'}
-                                    </span>
-                                </div>
-                                <p className="text-xs text-slate-300">
-                                    Pemantauan ketersediaan aplikasi, latensi
-                                    endpoint, sertifikat TLS, dan anomali
-                                    keamanan domain &amp; IP
-                                </p>
-                            </div>
-                        </div>
+                        <AppBrand
+                            subtitle="Pemantauan ketersediaan aplikasi, latensi endpoint, sertifikat TLS, dan anomali keamanan domain & IP"
+                            status={(
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/50 bg-cyan-950/90 px-2.5 py-0.5 font-mono text-xs font-semibold text-cyan-300">
+                                    <span className={`h-2 w-2 rounded-full ${liveStream ? 'animate-pulse bg-cyan-400 shadow-[0_0_8px_#22d3ee]' : 'bg-slate-500'}`} />
+                                    {liveStream ? 'Pemantauan Aktif' : 'Dijeda'}
+                                </span>
+                            )}
+                        />
 
                         <div id="pengaturan" className="flex flex-wrap items-center gap-2 scroll-mt-28">
                             <button

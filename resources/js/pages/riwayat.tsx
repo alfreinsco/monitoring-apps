@@ -1,6 +1,7 @@
 import { Head, Link, router, usePoll } from '@inertiajs/react';
 import { Fragment, useEffect, useState } from 'react';
 import { index as riwayatIndex } from '@/routes/riwayat';
+import AppBrand from '@/components/app-brand';
 import AppNavbar from '@/components/app-navbar';
 
 type TargetStatus = 'healthy' | 'degraded' | 'critical';
@@ -144,17 +145,8 @@ export default function Riwayat({ records, domains, filters, monitoringIntervalS
             <Head title="Riwayat Monitoring | Monitoring Domain & IP" />
             <div className="cyber-grid-bg min-h-screen bg-[#050811] text-slate-100 selection:bg-cyan-400/30 selection:text-cyan-100">
                 <header className="sticky top-0 z-20 border-b border-cyan-400/25 bg-[#070b16]/95 backdrop-blur-md">
-                    <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3.5 sm:px-6 lg:px-8">
-                        <div className="cyber-glow-cyan flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-300/60 bg-cyan-500/20 text-cyan-300">
-                            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l7 4v5c0 5-3 8-7 9-4-1-7-4-7-9V7l7-4z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
-                            </svg>
-                        </div>
-                        <div>
-                            <h1 className="text-base font-bold tracking-tight text-white sm:text-lg">Monitoring Domain &amp; IP</h1>
-                            <p className="text-xs text-slate-300">Riwayat pemeriksaan monitoring</p>
-                        </div>
+                    <div className="mx-auto max-w-7xl px-4 py-3.5 sm:px-6 lg:px-8">
+                        <AppBrand subtitle="Riwayat pemeriksaan monitoring" />
                     </div>
                     <AppNavbar activePage="riwayat" />
                 </header>
