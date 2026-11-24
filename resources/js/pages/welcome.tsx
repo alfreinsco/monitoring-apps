@@ -32,7 +32,6 @@ interface MonitoredTarget {
     monitoredPorts: string;
     threatScore: number;
     lastChecked: string;
-    region: string;
     history: number[];
     recentFindings: string[];
 }
@@ -154,7 +153,6 @@ export default function Welcome({
         target: '',
         label: '',
         ports: '80, 443',
-        region: 'CGK-DC1',
     });
 
     useEffect(() => {
@@ -192,8 +190,7 @@ export default function Welcome({
             const matchesQuery =
                 !q ||
                 t.label.toLowerCase().includes(q) ||
-                t.host.toLowerCase().includes(q) ||
-                t.region.toLowerCase().includes(q);
+                t.host.toLowerCase().includes(q);
             return matchesStatus && matchesQuery;
         });
     }, [targets, statusFilter, searchQuery]);
@@ -429,23 +426,6 @@ export default function Welcome({
                                     placeholder="80, 443"
                                     className="w-full rounded-lg border border-cyan-400/35 bg-[#060a14] px-3 py-2 font-mono text-sm text-white placeholder:text-slate-500 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-400/30 focus:outline-none"
                                 />
-                            </div>
-
-                            <div className="md:col-span-1">
-                                <label className="mb-1.5 block text-xs font-semibold text-slate-200">
-                                    Titik Uji
-                                </label>
-                                <select
-                                    value={data.region}
-                                    onChange={(e) =>
-                                        setData('region', e.target.value)
-                                    }
-                                    className="w-full rounded-lg border border-cyan-400/35 bg-[#060a14] px-2.5 py-2 font-mono text-xs font-semibold text-white focus:border-cyan-300 focus:ring-2 focus:ring-cyan-400/30 focus:outline-none"
-                                >
-                                    <option value="CGK-DC1">CGK</option>
-                                    <option value="SIN-Edge">SIN</option>
-                                    <option value="LAN-Privat">LAN</option>
-                                </select>
                             </div>
 
                             <div className="flex items-end md:col-span-2">
@@ -725,8 +705,7 @@ export default function Welcome({
                                             <p className="font-mono text-xs text-slate-300">
                                                 {formatHostDisplay(
                                                     selectedTarget,
-                                                )}{' '}
-                                                · {selectedTarget.region}
+                                                )}
                                             </p>
                                             {selectedTarget.url && (
                                                 <a

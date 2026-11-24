@@ -34,7 +34,6 @@ class MonitoringController extends Controller
                 'monitoredPorts' => $target->monitored_ports,
                 'threatScore' => $target->threat_score,
                 'lastChecked' => $target->last_checked,
-                'region' => $target->region,
                 'history' => $target->history ?? [],
                 'recentFindings' => $target->recent_findings ?? [],
             ]);
@@ -65,7 +64,6 @@ class MonitoringController extends Controller
             'target' => ['required', 'string', 'max:255'],
             'label' => ['nullable', 'string', 'max:120'],
             'ports' => ['nullable', 'string', 'max:64'],
-            'region' => ['nullable', 'string', 'max:64'],
         ]);
 
         $raw = strtolower(trim($validated['target']));
@@ -126,9 +124,6 @@ class MonitoringController extends Controller
             'monitored_ports' => implode(', ', $portNumbers),
             'threat_score' => 8,
             'last_checked' => 'Baru didaftarkan',
-            'region' => trim((string) ($validated['region'] ?? '')) !== ''
-                ? trim((string) $validated['region'])
-                : 'CGK-DC1',
             'history' => [],
             'recent_findings' => [
                 "Pemindaian awal terdaftar untuk {$normalizedHost}",
