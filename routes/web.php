@@ -11,8 +11,10 @@ Route::get('/pengaturan', [PengaturanController::class, 'index'])->name('pengatu
 Route::put('/pengaturan/telegram', [PengaturanController::class, 'updateTelegram'])->name('pengaturan.telegram.update');
 Route::put('/pengaturan/google-chat', [PengaturanController::class, 'updateGoogleChat'])->name('pengaturan.google-chat.update');
 Route::put('/pengaturan/riwayat', [PengaturanController::class, 'updateHistory'])->name('pengaturan.riwayat.update');
+Route::put('/pengaturan/monitoring-browser', [PengaturanController::class, 'updateBrowserMonitoring'])->name('pengaturan.monitoring-browser.update');
 Route::post('/pengaturan/telegram/test', [PengaturanController::class, 'testTelegram'])->name('pengaturan.telegram.test');
 Route::post('/pengaturan/google-chat/test', [PengaturanController::class, 'testGoogleChat'])->name('pengaturan.google-chat.test');
 Route::post('/targets', [MonitoringController::class, 'store'])->name('targets.store');
 Route::put('/targets/{target}', [MonitoringController::class, 'update'])->name('targets.update');
+Route::patch('/targets/{target}/active', [MonitoringController::class, 'updateActive'])->name('targets.active.update');
 Route::delete('/targets/{target}', [MonitoringController::class, 'destroy'])->name('targets.destroy');

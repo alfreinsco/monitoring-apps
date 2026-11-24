@@ -20,7 +20,7 @@ class TargetMonitorService
      */
     public function checkAll(): int
     {
-        $targets = MonitoredTarget::query()->get();
+        $targets = MonitoredTarget::query()->where('is_active', true)->get();
 
         foreach ($targets as $target) {
             $this->checkTarget($target);
@@ -42,7 +42,7 @@ class TargetMonitorService
         $now = now();
         $recorded = 0;
 
-        foreach (MonitoredTarget::query()->get() as $target) {
+        foreach (MonitoredTarget::query()->where('is_active', true)->get() as $target) {
             if (! in_array($target->status, $statuses, true)) {
                 continue;
             }
@@ -74,6 +74,10 @@ class TargetMonitorService
 
     public function checkTarget(MonitoredTarget $target): MonitoredTarget
     {
+        if (! $target->is_active) {
+            return $target;
+        }
+
         $previousStatus = (string) $target->status;
         $checkedAt = now();
 

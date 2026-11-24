@@ -22,7 +22,9 @@ class PengaturanController extends Controller
         $telegram = Pengaturan::query()->find('telegram')?->value ?? [];
         $googleChat = Pengaturan::query()->find('google_chat')?->value ?? [];
         $history = Pengaturan::query()->find('riwayat')?->value ?? [];
+        $browserMonitoring = Pengaturan::query()->find('monitoring_browser')?->value ?? [];
         $targets = MonitoredTarget::query()
+            ->where('is_active', true)
             ->orderBy('label')
             ->get(['id', 'label', 'host', 'kind'])
             ->map(fn (MonitoredTarget $target): array => [
@@ -38,6 +40,9 @@ class PengaturanController extends Controller
                 'statuses' => $history['statuses'] ?? ['healthy', 'degraded', 'critical'],
                 'intervalMinutes' => (float) ($history['interval_minutes'] ?? 1),
             ],
+            'browserMonitoringSettings' => [
+                'intervalSeconds' => (int) ($browserMonitoring['interval_seconds'] ?? 10),
+            ],
             'telegram' => [
                 'enabled' => (bool) ($telegram['enabled'] ?? false),
                 'tokenConfigured' => filled($telegram['bot_token'] ?? null),
@@ -48,6 +53,20 @@ class PengaturanController extends Controller
                 'clients' => $this->googleChatClients($googleChat, $targets->pluck('id')->all()),
             ],
         ]);
+    }
+
+    public function updateBrowserMonitoring(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'interval_seconds' => ['required', 'integer', 'min:1', 'max:86400'],
+        ]);
+
+        Pengaturan::query()->updateOrCreate(
+            ['key' => 'monitoring_browser'],
+            ['value' => ['interval_seconds' => (int) $validated['interval_seconds']]],
+        );
+
+        return to_route('pengaturan.index');
     }
 
     public function updateHistory(Request $request): RedirectResponse

@@ -1,18 +1,16 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
-import { destroy as deleteTarget, store as storeTarget, update as updateTarget } from '@/actions/App/Http/Controllers/MonitoringController';
+import { destroy as deleteTarget, store as storeTarget, update as updateTarget, updateActive as updateTargetActive } from '@/actions/App/Http/Controllers/MonitoringController';
 import { index as targetsIndex } from '@/routes/targets';
 import AppNavbar from '@/components/app-navbar';
 
 type TargetKind = 'domain' | 'ip';
-type TargetStatus = 'healthy' | 'degraded' | 'critical';
-
 interface Target {
     id: number;
     label: string;
     host: string;
     kind: TargetKind;
-    status: TargetStatus;
+    isActive: boolean;
     monitoredPorts: string;
     lastChecked: string;
 }
@@ -33,18 +31,6 @@ interface TargetsProps {
 }
 
 const inputClass = 'w-full rounded-lg border border-cyan-400/35 bg-[#060a14] px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none';
-
-function statusLabel(status: TargetStatus): string {
-    if (status === 'healthy') return 'Normal';
-    if (status === 'degraded') return 'Terganggu';
-    return 'Kritis';
-}
-
-function statusClass(status: TargetStatus): string {
-    if (status === 'healthy') return 'border-emerald-400/50 bg-emerald-950/70 text-emerald-300';
-    if (status === 'degraded') return 'border-amber-400/50 bg-amber-950/70 text-amber-300';
-    return 'border-rose-400/50 bg-rose-950/70 text-rose-300';
-}
 
 export default function TargetsIndex({ targets, search }: TargetsProps) {
     const [searchValue, setSearchValue] = useState(search);
@@ -106,6 +92,10 @@ export default function TargetsIndex({ targets, search }: TargetsProps) {
         router.delete(deleteTarget.url(target.id), { preserveScroll: true });
     }
 
+    function setTargetActive(target: Target, isActive: boolean): void {
+        router.patch(updateTargetActive.url(target.id), { is_active: isActive }, { preserveScroll: true });
+    }
+
     return (
         <>
             <Head title="Domain & IP | Monitoring Domain & IP" />
@@ -138,15 +128,14 @@ export default function TargetsIndex({ targets, search }: TargetsProps) {
                             <p className="text-xs text-slate-400">{targets.total} target terdaftar</p>
                         </div>
                         <div className="overflow-x-auto">
-                            <table className="w-full min-w-[850px] border-collapse text-left text-sm">
+                            <table className="w-full min-w-[700px] border-collapse text-left text-sm">
                                 <thead className="sticky top-0 z-10 border-y border-cyan-400/20 bg-[#0a1020] text-xs font-semibold uppercase tracking-wide text-slate-300">
                                     <tr>
                                         <th scope="col" className="px-5 py-3">Domain / IP</th>
                                         <th scope="col" className="px-5 py-3">Label</th>
                                         <th scope="col" className="px-5 py-3">Tipe</th>
-                                        <th scope="col" className="px-5 py-3">Status</th>
                                         <th scope="col" className="px-5 py-3">Port TCP</th>
-                                        <th scope="col" className="px-5 py-3">Pemeriksaan Terakhir</th>
+                                        <th scope="col" className="px-5 py-3">Aktif</th>
                                         <th scope="col" className="px-5 py-3 text-right">Aksi</th>
                                     </tr>
                                 </thead>
@@ -156,9 +145,19 @@ export default function TargetsIndex({ targets, search }: TargetsProps) {
                                             <td className="whitespace-nowrap px-5 py-4 font-mono font-semibold text-cyan-200">{target.host}</td>
                                             <td className="px-5 py-4 text-slate-200">{target.label}</td>
                                             <td className="px-5 py-4"><span className="rounded-md border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300">{target.kind === 'ip' ? 'IP' : 'Domain'}</span></td>
-                                            <td className="px-5 py-4"><span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(target.status)}`}>{statusLabel(target.status)}</span></td>
                                             <td className="whitespace-nowrap px-5 py-4 font-mono text-xs text-slate-300">{target.monitoredPorts}</td>
-                                            <td className="whitespace-nowrap px-5 py-4 text-xs text-slate-400">{target.lastChecked}</td>
+                                            <td className="px-5 py-4">
+                                                <button
+                                                    type="button"
+                                                    role="switch"
+                                                    aria-label={`Aktifkan monitoring untuk ${target.host}`}
+                                                    aria-checked={target.isActive}
+                                                    onClick={() => setTargetActive(target, !target.isActive)}
+                                                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 ${target.isActive ? 'border-cyan-300/50 bg-cyan-500/70' : 'border-slate-600 bg-slate-700'}`}
+                                                >
+                                                    <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white transition-transform ${target.isActive ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                                </button>
+                                            </td>
                                             <td className="px-5 py-4">
                                                 <div className="flex justify-end gap-2">
                                                     <button type="button" onClick={() => openEditModal(target)} aria-label={`Edit ${target.host}`} className="rounded-md border border-cyan-400/30 px-3 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-950/60">Edit</button>
@@ -168,7 +167,7 @@ export default function TargetsIndex({ targets, search }: TargetsProps) {
                                         </tr>
                                     ))}
                                     {targets.data.length === 0 && (
-                                        <tr><td colSpan={7} className="px-5 py-14 text-center text-sm text-slate-400">{search ? 'Tidak ada target yang sesuai dengan pencarian.' : 'Belum ada domain atau IP terdaftar.'}</td></tr>
+                                        <tr><td colSpan={6} className="px-5 py-14 text-center text-sm text-slate-400">{search ? 'Tidak ada target yang sesuai dengan pencarian.' : 'Belum ada domain atau IP terdaftar.'}</td></tr>
                                     )}
                                 </tbody>
                             </table>

@@ -39,6 +39,7 @@ interface HistoryPaginator {
 interface RiwayatProps {
     records: HistoryPaginator;
     domains: DomainOption[];
+    monitoringIntervalSeconds: number;
     filters: {
         domain: string;
         from: string;
@@ -88,14 +89,14 @@ function statusBadgeClasses(status: TargetStatus): string {
     }
 }
 
-export default function Riwayat({ records, domains, filters }: RiwayatProps) {
+export default function Riwayat({ records, domains, filters, monitoringIntervalSeconds }: RiwayatProps) {
     const [domain, setDomain] = useState(filters.domain);
     const [from, setFrom] = useState(filters.from);
     const [to, setTo] = useState(filters.to);
     const [filterError, setFilterError] = useState<string | null>(null);
     const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
 
-    usePoll(10000, {
+    usePoll(monitoringIntervalSeconds * 1000, {
         only: ['records'],
     }, {
         mode: 'rest',

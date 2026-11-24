@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MonitoredTarget;
 use App\Models\MonitoringHistory;
+use App\Models\Pengaturan;
 use App\Services\TargetMonitorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,6 +19,7 @@ class MonitoringController extends Controller
     public function index(): Response
     {
         $targets = MonitoredTarget::query()
+            ->where('is_active', true)
             ->orderByDesc('id')
             ->get()
             ->map(fn (MonitoredTarget $target): array => [
@@ -42,6 +44,7 @@ class MonitoringController extends Controller
 
         return Inertia::render('welcome', [
             'initialTargets' => $targets,
+            'monitoringIntervalSeconds' => (int) (Pengaturan::query()->find('monitoring_browser')?->value['interval_seconds'] ?? 10),
         ]);
     }
 
@@ -65,15 +68,25 @@ class MonitoringController extends Controller
                 'label' => $target->label,
                 'host' => $target->host,
                 'kind' => $target->kind,
-                'status' => $target->status,
+                'isActive' => $target->is_active,
                 'monitoredPorts' => $target->monitored_ports,
-                'lastChecked' => $target->last_checked,
             ]);
 
         return Inertia::render('targets/index', [
             'targets' => $targets,
             'search' => $search,
         ]);
+    }
+
+    public function updateActive(Request $request, MonitoredTarget $target): RedirectResponse
+    {
+        $validated = $request->validate([
+            'is_active' => ['required', 'boolean'],
+        ]);
+
+        $target->update(['is_active' => (bool) $validated['is_active']]);
+
+        return to_route('targets.index');
     }
 
     public function riwayat(Request $request): Response
@@ -145,6 +158,7 @@ class MonitoringController extends Controller
         return Inertia::render('riwayat', [
             'records' => $records,
             'domains' => $domains,
+            'monitoringIntervalSeconds' => (int) (Pengaturan::query()->find('monitoring_browser')?->value['interval_seconds'] ?? 10),
             'filters' => [
                 'domain' => $selectedDomain,
                 'from' => $validated['from'] ?? '',
@@ -209,6 +223,7 @@ class MonitoringController extends Controller
             'host' => $normalizedHost,
             'url' => $kind === 'domain' ? "https://{$normalizedHost}" : null,
             'kind' => $kind,
+            'is_active' => true,
             'status' => 'degraded',
             'uptime' => 100.00,
             'latency_ms' => 0,

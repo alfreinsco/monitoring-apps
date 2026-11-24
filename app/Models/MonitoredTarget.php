@@ -7,12 +7,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MonitoredTarget extends Model
 {
+    protected $attributes = [
+        'is_active' => true,
+    ];
+
     protected $fillable = [
         'slug',
         'label',
         'host',
         'url',
         'kind',
+        'is_active',
         'status',
         'uptime',
         'latency_ms',
@@ -36,6 +41,7 @@ class MonitoredTarget extends Model
             'p95_ms' => 'integer',
             'ssl_days_remaining' => 'integer',
             'threat_score' => 'integer',
+            'is_active' => 'boolean',
             'history' => 'array',
             'recent_findings' => 'array',
         ];

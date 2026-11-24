@@ -26,6 +26,7 @@ interface MonitoredTarget {
 
 interface WelcomeProps {
     initialTargets: MonitoredTarget[];
+    monitoringIntervalSeconds: number;
 }
 
 function statusLabel(status: TargetStatus): string {
@@ -61,7 +62,7 @@ function statusDotClasses(status: TargetStatus): string {
     }
 }
 
-export default function Welcome({ initialTargets }: WelcomeProps) {
+export default function Welcome({ initialTargets, monitoringIntervalSeconds }: WelcomeProps) {
     const [targets, setTargets] = useState<MonitoredTarget[]>(initialTargets);
     const [selectedId, setSelectedId] = useState<string>(
         initialTargets[0]?.id ?? '',
@@ -73,7 +74,7 @@ export default function Welcome({ initialTargets }: WelcomeProps) {
     const [liveStream, setLiveStream] = useState<boolean>(true);
     const [redactSensitive, setRedactSensitive] = useState<boolean>(true);
 
-    const { start: startPolling, stop: stopPolling } = usePoll(10000, {
+    const { start: startPolling, stop: stopPolling } = usePoll(monitoringIntervalSeconds * 1000, {
         only: ['initialTargets'],
     }, {
         autoStart: true,
