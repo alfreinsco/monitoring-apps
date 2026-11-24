@@ -45,6 +45,37 @@ class MonitoringController extends Controller
         ]);
     }
 
+    public function targets(Request $request): Response
+    {
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:120'],
+        ]);
+        $search = trim((string) ($validated['search'] ?? ''));
+
+        $targets = MonitoredTarget::query()
+            ->when($search !== '', fn ($query) => $query->where(function ($query) use ($search): void {
+                $query->where('host', 'like', "%{$search}%")
+                    ->orWhere('label', 'like', "%{$search}%");
+            }))
+            ->orderByDesc('id')
+            ->paginate(10)
+            ->withQueryString()
+            ->through(fn (MonitoredTarget $target): array => [
+                'id' => $target->id,
+                'label' => $target->label,
+                'host' => $target->host,
+                'kind' => $target->kind,
+                'status' => $target->status,
+                'monitoredPorts' => $target->monitored_ports,
+                'lastChecked' => $target->last_checked,
+            ]);
+
+        return Inertia::render('targets/index', [
+            'targets' => $targets,
+            'search' => $search,
+        ]);
+    }
+
     public function riwayat(Request $request): Response
     {
         $validated = $request->validate([
@@ -197,6 +228,75 @@ class MonitoringController extends Controller
 
         $monitor->checkTarget($target);
 
-        return back();
+        return to_route('targets.index');
+    }
+
+    public function update(Request $request, MonitoredTarget $target, TargetMonitorService $monitor): RedirectResponse
+    {
+        $validated = $request->validate([
+            'target' => ['required', 'string', 'max:255'],
+            'label' => ['nullable', 'string', 'max:120'],
+            'ports' => ['nullable', 'string', 'max:64'],
+        ]);
+
+        $raw = strtolower(trim($validated['target']));
+        $normalizedHost = preg_replace(['#^https?://#i', '#/.*$#'], '', $raw) ?? '';
+        $normalizedHost = rtrim($normalizedHost, '/');
+        $isIp = filter_var($normalizedHost, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false;
+        $isDomain = ! $isIp && (bool) preg_match('/^(?!-)[a-z0-9-]+(?:\.[a-z0-9-]+)+$/', $normalizedHost);
+
+        if (! $isIp && ! $isDomain) {
+            throw ValidationException::withMessages([
+                'target' => 'Masukkan domain yang valid atau alamat IPv4 yang valid.',
+            ]);
+        }
+
+        if (MonitoredTarget::query()->where('host', $normalizedHost)->where('id', '<>', $target->id)->exists()) {
+            throw ValidationException::withMessages([
+                'target' => "Target {$normalizedHost} sudah terdaftar.",
+            ]);
+        }
+
+        $kind = $isIp ? 'ip' : 'domain';
+        $ports = trim((string) ($validated['ports'] ?? '')) !== ''
+            ? trim((string) $validated['ports'])
+            : ($kind === 'domain' ? '80, 443' : '443');
+        $portNumbers = array_values(array_unique(array_map(
+            static fn (string $port): int => (int) trim($port),
+            explode(',', $ports),
+        )));
+
+        if (! preg_match('/^\s*\d+(?:\s*,\s*\d+)*\s*$/', $ports)
+            || $portNumbers === []
+            || count($portNumbers) > 5
+            || collect($portNumbers)->contains(fn (int $port): bool => $port < 1 || $port > 65535)) {
+            throw ValidationException::withMessages([
+                'ports' => 'Masukkan 1–5 port TCP yang valid (1–65535), dipisahkan koma.',
+            ]);
+        }
+
+        $target->update([
+            'slug' => Str::slug("{$normalizedHost}-{$target->id}"),
+            'label' => trim((string) ($validated['label'] ?? '')) !== ''
+                ? trim((string) $validated['label'])
+                : ($kind === 'domain' ? "Web {$normalizedHost}" : "Host {$normalizedHost}"),
+            'host' => $normalizedHost,
+            'url' => $kind === 'domain' ? "https://{$normalizedHost}" : null,
+            'kind' => $kind,
+            'monitored_ports' => implode(', ', $portNumbers),
+        ]);
+
+        if ($target->wasChanged(['host', 'kind', 'monitored_ports'])) {
+            $monitor->checkTarget($target);
+        }
+
+        return to_route('targets.index');
+    }
+
+    public function destroy(MonitoredTarget $target): RedirectResponse
+    {
+        $target->delete();
+
+        return to_route('targets.index');
     }
 }

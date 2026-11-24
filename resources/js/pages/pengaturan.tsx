@@ -1,8 +1,6 @@
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, useForm } from '@inertiajs/react';
 import { updateGoogleChat, updateTelegram } from '@/actions/App/Http/Controllers/PengaturanController';
-import { home } from '@/routes';
-import { index as riwayatIndex } from '@/routes/riwayat';
-import { index as pengaturanIndex } from '@/routes/pengaturan';
+import AppNavbar from '@/components/app-navbar';
 
 type Status = 'healthy' | 'degraded' | 'critical';
 
@@ -78,13 +76,7 @@ export default function Pengaturan({ telegram, googleChat }: SettingsProps) {
                             <p className="text-xs text-slate-300">Pengaturan notifikasi monitoring</p>
                         </div>
                     </div>
-                    <nav aria-label="Navigasi utama" className="border-t border-cyan-400/15">
-                        <div className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-2 sm:px-6 lg:px-8">
-                            <Link href={home.url()} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-cyan-950/60 hover:text-cyan-200">Monitor</Link>
-                            <Link href={riwayatIndex.url()} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-cyan-950/60 hover:text-cyan-200">Riwayat</Link>
-                            <Link href={pengaturanIndex.url()} aria-current="page" className="rounded-lg bg-cyan-950/70 px-3 py-1.5 text-xs font-semibold text-cyan-200">Pengaturan</Link>
-                        </div>
-                    </nav>
+                    <AppNavbar activePage="pengaturan" />
                 </header>
 
                 <main className="mx-auto max-w-4xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">

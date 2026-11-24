@@ -1,9 +1,7 @@
-import { Head, Link, useForm, usePoll } from '@inertiajs/react';
+import { Head, useForm, usePoll } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import { store } from '@/actions/App/Http/Controllers/MonitoringController';
-import { home } from '@/routes';
-import { index as riwayatIndex } from '@/routes/riwayat';
-import { index as pengaturanIndex } from '@/routes/pengaturan';
+import AppNavbar from '@/components/app-navbar';
 
 type TargetKind = 'domain' | 'ip';
 type TargetStatus = 'healthy' | 'degraded' | 'critical';
@@ -318,29 +316,7 @@ export default function Welcome({ initialTargets }: WelcomeProps) {
                             </button>
                         </div>
                     </div>
-                    <nav aria-label="Navigasi utama" className="border-t border-cyan-400/15">
-                        <div className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-2 sm:px-6 lg:px-8">
-                            <Link
-                                href={home.url()}
-                                aria-current="page"
-                                className="shrink-0 rounded-lg bg-cyan-950/70 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
-                            >
-                                Monitor
-                            </Link>
-                            <Link
-                                href={riwayatIndex.url()}
-                                className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-cyan-950/60 hover:text-cyan-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
-                            >
-                                Riwayat
-                            </Link>
-                            <a
-                                href={pengaturanIndex.url()}
-                                className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-cyan-950/60 hover:text-cyan-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
-                            >
-                                Pengaturan
-                            </a>
-                        </div>
-                    </nav>
+                    <AppNavbar activePage="monitor" />
                 </header>
 
                 <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
