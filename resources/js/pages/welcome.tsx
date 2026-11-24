@@ -1,6 +1,5 @@
-import { Head, useForm, usePoll } from '@inertiajs/react';
+import { Head, usePoll } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
-import { store } from '@/actions/App/Http/Controllers/MonitoringController';
 import AppNavbar from '@/components/app-navbar';
 
 type TargetKind = 'domain' | 'ip';
@@ -27,34 +26,6 @@ interface MonitoredTarget {
 
 interface WelcomeProps {
     initialTargets: MonitoredTarget[];
-}
-
-function normalizeTargetInput(
-    raw: string,
-): { host: string; kind: TargetKind } | null {
-    const trimmed = raw
-        .trim()
-        .replace(/^https?:\/\//i, '')
-        .replace(/\/.*$/, '')
-        .toLowerCase();
-
-    if (!trimmed) {
-        return null;
-    }
-
-    const ipv4Regex =
-        /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
-    const domainRegex = /^(?!-)[a-z0-9-]+(?:\.[a-z0-9-]+)+$/;
-
-    if (ipv4Regex.test(trimmed)) {
-        return { host: trimmed, kind: 'ip' };
-    }
-
-    if (domainRegex.test(trimmed)) {
-        return { host: trimmed, kind: 'domain' };
-    }
-
-    return null;
 }
 
 function statusLabel(status: TargetStatus): string {
@@ -101,20 +72,12 @@ export default function Welcome({ initialTargets }: WelcomeProps) {
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [liveStream, setLiveStream] = useState<boolean>(true);
     const [redactSensitive, setRedactSensitive] = useState<boolean>(true);
-    const [formError, setFormError] = useState<string | null>(null);
-    const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
     const { start: startPolling, stop: stopPolling } = usePoll(10000, {
         only: ['initialTargets'],
     }, {
         autoStart: true,
         mode: 'rest',
-    });
-
-    const { data, setData, post, processing, reset } = useForm({
-        target: '',
-        label: '',
-        ports: '80, 443',
     });
 
     useEffect(() => {
@@ -184,45 +147,6 @@ export default function Welcome({ initialTargets }: WelcomeProps) {
             domainCount,
         };
     }, [targets]);
-
-    function handleRegisterTarget(e: React.FormEvent<HTMLFormElement>) {
-        e.preventDefault();
-        setFormError(null);
-        setFormSuccess(null);
-
-        const parsed = normalizeTargetInput(data.target);
-        if (!parsed) {
-            setFormError(
-                'Masukkan nama domain yang valid (contoh: portal.unpatti.ac.id) atau alamat IPv4 yang valid (contoh: 103.184.22.50).',
-            );
-            return;
-        }
-
-        const alreadyExists = targets.some(
-            (t) => t.host.toLowerCase() === parsed.host.toLowerCase(),
-        );
-        if (alreadyExists) {
-            setFormError(
-                `Target ${parsed.host} sudah terdaftar dalam pantauan aktif.`,
-            );
-            return;
-        }
-
-        post(store.url(), {
-            preserveScroll: true,
-            onSuccess: () => {
-                reset('target', 'label');
-                setFormSuccess(
-                    `${parsed.host} berhasil disimpan ke database dan masuk antrean pemantauan.`,
-                );
-            },
-            onError: (errors) => {
-                setFormError(
-                    errors.target ?? 'Gagal mendaftarkan target ke database.',
-                );
-            },
-        });
-    }
 
     function formatHostDisplay(target: MonitoredTarget): string {
         if (!redactSensitive || target.kind !== 'ip') {
@@ -320,98 +244,6 @@ export default function Welcome({ initialTargets }: WelcomeProps) {
                 </header>
 
                 <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-                    {/* Bilah Pendaftaran Domain atau IP */}
-                    <section className="cyber-panel rounded-2xl p-5">
-                        <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-                            <div>
-                                <h2 className="text-sm font-bold tracking-wide text-cyan-300 uppercase">
-                                    Daftarkan Domain atau IP untuk Dipantau
-                                </h2>
-                                <p className="mt-0.5 text-xs text-slate-300">
-                                    Tambahkan domain HTTPS atau alamat IPv4 host
-                                    agar langsung tersimpan ke database dan
-                                    masuk ke siklus pengecekan.
-                                </p>
-                            </div>
-                            <span className="rounded-md border border-cyan-400/30 bg-cyan-950/70 px-2.5 py-1 font-mono text-xs font-semibold text-cyan-300">
-                                {summary.total} target terdaftar
-                            </span>
-                        </div>
-
-                        <form
-                            onSubmit={handleRegisterTarget}
-                            className="grid grid-cols-1 gap-3 md:grid-cols-12"
-                        >
-                            <div className="md:col-span-4">
-                                <label className="mb-1.5 block text-xs font-semibold text-slate-200">
-                                    Domain atau Alamat IP
-                                </label>
-                                <input
-                                    type="text"
-                                    value={data.target}
-                                    onChange={(e) =>
-                                        setData('target', e.target.value)
-                                    }
-                                    placeholder="contoh: portal.unpatti.ac.id atau 103.184.22.80"
-                                    className="w-full rounded-lg border border-cyan-400/35 bg-[#060a14] px-3 py-2 font-mono text-sm text-white placeholder:text-slate-500 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-400/30 focus:outline-none"
-                                />
-                            </div>
-
-                            <div className="md:col-span-3">
-                                <label className="mb-1.5 block text-xs font-semibold text-slate-200">
-                                    Nama Layanan / Label
-                                </label>
-                                <input
-                                    type="text"
-                                    value={data.label}
-                                    onChange={(e) =>
-                                        setData('label', e.target.value)
-                                    }
-                                    placeholder="contoh: Portal Akademik"
-                                    className="w-full rounded-lg border border-cyan-400/35 bg-[#060a14] px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-400/30 focus:outline-none"
-                                />
-                            </div>
-
-                            <div className="md:col-span-2">
-                                <label className="mb-1.5 block text-xs font-semibold text-slate-200">
-                                    Port Pantauan
-                                </label>
-                                <input
-                                    type="text"
-                                    value={data.ports}
-                                    onChange={(e) =>
-                                        setData('ports', e.target.value)
-                                    }
-                                    placeholder="80, 443"
-                                    className="w-full rounded-lg border border-cyan-400/35 bg-[#060a14] px-3 py-2 font-mono text-sm text-white placeholder:text-slate-500 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-400/30 focus:outline-none"
-                                />
-                            </div>
-
-                            <div className="flex items-end md:col-span-2">
-                                <button
-                                    type="submit"
-                                    disabled={processing}
-                                    className="cyber-glow-cyan w-full rounded-lg border border-cyan-300 bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 focus:ring-2 focus:ring-cyan-300/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    {processing
-                                        ? 'Menyimpan...'
-                                        : '+ Daftarkan'}
-                                </button>
-                            </div>
-                        </form>
-
-                        {formError && (
-                            <p className="mt-3 rounded-lg border border-rose-400/60 bg-rose-950/85 px-3 py-2 text-xs font-semibold text-rose-200">
-                                {formError}
-                            </p>
-                        )}
-                        {formSuccess && (
-                            <p className="mt-3 rounded-lg border border-emerald-400/60 bg-emerald-950/85 px-3 py-2 text-xs font-semibold text-emerald-200">
-                                {formSuccess}
-                            </p>
-                        )}
-                    </section>
-
                     {/* Kartu Ringkasan KPI */}
                     <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         <div className="cyber-panel rounded-2xl p-5">
