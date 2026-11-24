@@ -32,16 +32,40 @@ class MonitoringNotifier
 
         try {
             $token = Crypt::decryptString($settings['bot_token'] ?? '');
-            $response = Http::asForm()->connectTimeout(4)->timeout(8)->post("https://api.telegram.org/bot{$token}/sendMessage", [
-                'chat_id' => $settings['chat_id'],
-                'text' => $message,
-            ])->throw();
-
-            if (! $response->json('ok')) {
-                throw new \RuntimeException('Telegram menolak pengiriman pesan.');
-            }
         } catch (Throwable $exception) {
             Log::warning('Gagal mengirim notifikasi Telegram.', ['exception' => $exception::class]);
+
+            return;
+        }
+
+        $clients = $settings['clients'] ?? null;
+        if (! is_array($clients) && filled($settings['chat_id'] ?? null)) {
+            $clients = [[
+                'chat_id' => $settings['chat_id'],
+                'target_all' => true,
+                'target_ids' => [$target->id],
+            ]];
+        }
+
+        foreach ($clients ?? [] as $client) {
+            $targetIds = array_map('intval', $client['target_ids'] ?? []);
+            $receivesAllTargets = (bool) ($client['target_all'] ?? ($targetIds === []));
+            if (! $receivesAllTargets && ! in_array($target->id, $targetIds, true)) {
+                continue;
+            }
+
+            try {
+                $response = Http::asForm()->connectTimeout(4)->timeout(8)->post("https://api.telegram.org/bot{$token}/sendMessage", [
+                    'chat_id' => $client['chat_id'],
+                    'text' => $message,
+                ])->throw();
+
+                if (! $response->json('ok')) {
+                    throw new \RuntimeException('Telegram menolak pengiriman pesan.');
+                }
+            } catch (Throwable $exception) {
+                Log::warning('Gagal mengirim notifikasi Telegram.', ['exception' => $exception::class]);
+            }
         }
     }
 
@@ -52,11 +76,30 @@ class MonitoringNotifier
             return;
         }
 
-        try {
-            $webhookUrl = Crypt::decryptString($settings['webhook_url'] ?? '');
-            Http::connectTimeout(4)->timeout(8)->post($webhookUrl, ['text' => $message])->throw();
-        } catch (Throwable $exception) {
-            Log::warning('Gagal mengirim notifikasi Google Chat.', ['exception' => $exception::class]);
+        $clients = $settings['clients'] ?? null;
+        if (! is_array($clients) && filled($settings['webhook_url'] ?? null)) {
+            $clients = [
+                'legacy_webhook' => [
+                    'webhook_url' => $settings['webhook_url'],
+                    'target_all' => true,
+                    'target_ids' => [$target->id],
+                ],
+            ];
+        }
+
+        foreach ($clients ?? [] as $client) {
+            $targetIds = array_map('intval', $client['target_ids'] ?? []);
+            $receivesAllTargets = (bool) ($client['target_all'] ?? ($targetIds === []));
+            if (! $receivesAllTargets && ! in_array($target->id, $targetIds, true)) {
+                continue;
+            }
+
+            try {
+                $webhookUrl = Crypt::decryptString($client['webhook_url'] ?? '');
+                Http::connectTimeout(4)->timeout(8)->post($webhookUrl, ['text' => $message])->throw();
+            } catch (Throwable $exception) {
+                Log::warning('Gagal mengirim notifikasi Google Chat.', ['exception' => $exception::class]);
+            }
         }
     }
 }
