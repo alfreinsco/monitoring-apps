@@ -16,7 +16,7 @@ class TargetMonitorService
      */
     public function checkAll(): int
     {
-        $targets = MonitoredTarget::all();
+        $targets = MonitoredTarget::query()->get();
 
         foreach ($targets as $target) {
             $this->checkTarget($target);
@@ -81,6 +81,23 @@ class TargetMonitorService
         $sslInfo = $this->inspectSslCertificate($target->host);
         $findings = [];
         $threatScore = 5;
+        $ports = array_values(array_filter(array_map(
+            static fn (string $port): int => (int) trim($port),
+            explode(',', $target->monitored_ports ?: '443'),
+        )));
+        $closedPorts = [];
+
+        foreach ($ports as $port) {
+            $errno = 0;
+            $errstr = '';
+            $socket = @fsockopen($target->host, $port, $errno, $errstr, 2.0);
+
+            if (is_resource($socket)) {
+                fclose($socket);
+            } else {
+                $closedPorts[] = $port;
+            }
+        }
 
         $start = hrtime(true);
 
@@ -90,8 +107,8 @@ class TargetMonitorService
                 'Accept' => 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
             ])
                 ->withOptions([
-                    'verify' => false,
-                    'allow_redirects' => ['max' => 5],
+                    'verify' => true,
+                    'allow_redirects' => false,
                 ])
                 ->connectTimeout(6)
                 ->timeout(12)
@@ -121,6 +138,14 @@ class TargetMonitorService
             } else {
                 $status = 'healthy';
                 $findings[] = "Endpoint HTTPS aktif ({$httpStatus}) dengan RTT {$latencyMs} ms";
+            }
+
+            if ($closedPorts !== []) {
+                if ($status === 'healthy') {
+                    $status = 'degraded';
+                }
+                $threatScore += 12;
+                $findings[] = 'Port TCP tidak merespons: '.implode(', ', $closedPorts);
             }
 
             // Periksa header keamanan HTTP dasar
@@ -371,7 +396,7 @@ class TargetMonitorService
         $statusChanged = $previousStatus !== $result['status'];
         $sslExpiring = $result['ssl_days_remaining'] !== null && $result['ssl_days_remaining'] <= 14;
 
-        if (! $statusChanged && ! $sslExpiring && $result['status'] === 'healthy') {
+        if (! $statusChanged) {
             return;
         }
 

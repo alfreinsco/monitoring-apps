@@ -1,4 +1,4 @@
-import { Head, useForm } from '@inertiajs/react';
+import { Head, useForm, usePoll } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import { store } from '@/actions/App/Http/Controllers/MonitoringController';
 
@@ -143,6 +143,13 @@ export default function Welcome({
     const [formError, setFormError] = useState<string | null>(null);
     const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
+    const { start: startPolling, stop: stopPolling } = usePoll(10000, {
+        only: ['initialTargets', 'initialEvents'],
+    }, {
+        autoStart: true,
+        mode: 'rest',
+    });
+
     const { data, setData, post, processing, reset } = useForm({
         target: '',
         label: '',
@@ -165,44 +172,12 @@ export default function Welcome({
     }, [initialEvents]);
 
     useEffect(() => {
-        if (!liveStream || targets.length === 0) {
-            return;
+        if (liveStream) {
+            startPolling();
+        } else {
+            stopPolling();
         }
-
-        const timer = window.setInterval(() => {
-            setTargets((prev) =>
-                prev.map((item) => {
-                    const delta = Math.round((Math.random() - 0.48) * 14);
-                    const nextLatency = Math.max(18, item.latencyMs + delta);
-                    const nextP95 = Math.max(
-                        nextLatency + 24,
-                        item.p95Ms + Math.round(delta * 1.2),
-                    );
-                    const nextHistory = [...item.history.slice(1), nextLatency];
-
-                    let nextStatus: TargetStatus = item.status;
-                    if (nextLatency > 220) {
-                        nextStatus = 'critical';
-                    } else if (nextLatency > 135) {
-                        nextStatus = 'degraded';
-                    } else {
-                        nextStatus = 'healthy';
-                    }
-
-                    return {
-                        ...item,
-                        latencyMs: nextLatency,
-                        p95Ms: nextP95,
-                        status: nextStatus,
-                        lastChecked: 'Langsung',
-                        history: nextHistory,
-                    };
-                }),
-            );
-        }, 2500);
-
-        return () => window.clearInterval(timer);
-    }, [liveStream, targets.length]);
+    }, [liveStream, startPolling, stopPolling]);
 
     const selectedTarget = useMemo(
         () => targets.find((t) => t.id === selectedId) ?? targets[0],

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MonitoredTarget;
 use App\Models\SecurityEvent;
+use App\Services\TargetMonitorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -58,7 +59,7 @@ class MonitoringController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, TargetMonitorService $monitor): RedirectResponse
     {
         $validated = $request->validate([
             'target' => ['required', 'string', 'max:255'],
@@ -87,7 +88,25 @@ class MonitoringController extends Controller
         }
 
         $kind = $isIp ? 'ip' : 'domain';
-        $initialLatency = $kind === 'domain' ? 48 : 36;
+        $ports = trim((string) ($validated['ports'] ?? '')) !== ''
+            ? trim((string) $validated['ports'])
+            : ($kind === 'domain' ? '80, 443' : '443');
+        if (! preg_match('/^\s*\d+(?:\s*,\s*\d+)*\s*$/', $ports)) {
+            return back()->withErrors([
+                'ports' => 'Format port harus berupa angka yang dipisahkan koma.',
+            ]);
+        }
+
+        $portNumbers = array_values(array_unique(array_filter(array_map(
+            static fn (string $port): int => (int) trim($port),
+            explode(',', $ports),
+        ))));
+
+        if ($portNumbers === [] || count($portNumbers) > 5 || collect($portNumbers)->contains(fn (int $port): bool => $port < 1 || $port > 65535)) {
+            return back()->withErrors([
+                'ports' => 'Masukkan 1–5 port TCP yang valid (1–65535).',
+            ]);
+        }
 
         $target = MonitoredTarget::create([
             'slug' => Str::slug($normalizedHost),
@@ -97,25 +116,23 @@ class MonitoringController extends Controller
             'host' => $normalizedHost,
             'url' => $kind === 'domain' ? "https://{$normalizedHost}" : null,
             'kind' => $kind,
-            'status' => 'healthy',
+            'status' => 'degraded',
             'uptime' => 100.00,
-            'latency_ms' => $initialLatency,
-            'p95_ms' => $initialLatency + 34,
-            'http_status' => $kind === 'domain' ? '200 OK' : 'ICMP / TCP Aktif',
-            'ssl_days_remaining' => $kind === 'domain' ? 82 : null,
-            'tls_version' => $kind === 'domain' ? 'TLS 1.3' : 'Pemindaian IP Langsung',
-            'monitored_ports' => trim((string) ($validated['ports'] ?? '')) !== ''
-                ? trim((string) $validated['ports'])
-                : ($kind === 'domain' ? '80, 443' : '443'),
+            'latency_ms' => 0,
+            'p95_ms' => 0,
+            'http_status' => 'Menunggu pemeriksaan pertama',
+            'ssl_days_remaining' => null,
+            'tls_version' => 'Belum diperiksa',
+            'monitored_ports' => implode(', ', $portNumbers),
             'threat_score' => 8,
             'last_checked' => 'Baru didaftarkan',
             'region' => trim((string) ($validated['region'] ?? '')) !== ''
                 ? trim((string) $validated['region'])
                 : 'CGK-DC1',
-            'history' => [52, 49, 51, 47, 50, 46, $initialLatency],
+            'history' => [],
             'recent_findings' => [
                 "Pemindaian awal terdaftar untuk {$normalizedHost}",
-                'Profil dasar keamanan & latensi berhasil diinisialisasi',
+                'Pemeriksaan konektivitas pertama sedang berjalan',
             ],
         ]);
 
@@ -131,6 +148,8 @@ class MonitoringController extends Controller
             ),
             'mitigation' => 'Verifikasi aturan firewall & ambang peringatan sesuai tingkat kekritisan aset.',
         ]);
+
+        $monitor->checkTarget($target);
 
         return back();
     }

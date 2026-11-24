@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\MonitoredTarget;
-use App\Models\SecurityEvent;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -152,41 +151,19 @@ class MonitoringSeeder extends Seeder
                 [
                     ...$item,
                     'slug' => Str::slug($item['host']),
+                    'status' => 'degraded',
+                    'uptime' => 0,
+                    'latency_ms' => 0,
+                    'p95_ms' => 0,
+                    'http_status' => 'Menunggu pemeriksaan pertama',
+                    'ssl_days_remaining' => null,
+                    'tls_version' => 'Belum diperiksa',
+                    'threat_score' => 0,
+                    'last_checked' => 'Belum diperiksa',
+                    'history' => [],
+                    'recent_findings' => ['Target menunggu hasil pemeriksaan nyata pertama'],
                 ],
             );
-        }
-
-        $events = [
-            [
-                'timestamp' => '03:58:12',
-                'target' => 'seleksi-ppds.fk.unpatti.ac.id',
-                'severity' => 'low',
-                'category' => 'Audit TLS & Ketersediaan',
-                'summary' => 'Pemeriksaan HTTPS berhasil (200 OK), TLS 1.3 aktif dengan sisa masa berlaku 79 hari',
-                'mitigation' => 'Pertahankan pembaruan otomatis sertifikat SSL dan pantau lonjakan trafik saat jadwal seleksi.',
-            ],
-            [
-                'timestamp' => '03:57:45',
-                'target' => 'mandiri.pmb.unpatti.ac.id',
-                'severity' => 'low',
-                'category' => 'Pemantauan PMB',
-                'summary' => 'Portal PMB Mandiri Sarjana & Pascasarjana merespons stabil di bawah 60 ms',
-                'mitigation' => 'Pastikan rate-limiting endpoint pendaftaran tetap aktif pada jam sibuk pendaftar.',
-            ],
-            [
-                'timestamp' => '03:56:30',
-                'target' => 'repository.unpatti.ac.id',
-                'severity' => 'low',
-                'category' => 'Target Terdaftar',
-                'summary' => 'Seluruh 6 domain layanan UNPATTI berhasil dimuat dari database ke antrean pemantauan',
-                'mitigation' => 'Lakukan audit berkala header keamanan dan kapasitas penyimpanan aset.',
-            ],
-        ];
-
-        if (SecurityEvent::count() === 0) {
-            foreach ($events as $event) {
-                SecurityEvent::create($event);
-            }
         }
     }
 }
